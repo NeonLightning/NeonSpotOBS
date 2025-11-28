@@ -1,0 +1,8 @@
+build.bat
+/build
+spotify_client.json
+spotify_tokens.json
+SpotifyNowPlaying.exe.bak
+upx.exe
+styles.css
+SpotifyNowPlayingGUI.exe
