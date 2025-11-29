@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from flask import Flask, redirect, render_template_string, request
 from tkinter import ttk, colorchooser, messagebox, filedialog
 from werkzeug.serving import make_server
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageTk
 
 warnings.filterwarnings('ignore', category=UserWarning, module='PIL')
 
@@ -492,19 +492,6 @@ def background_image():
         return send_file(file_path, mimetype='image/jpeg')
     print("Background image not found!")
     return "Image not found", 404
-    def choose_bg_image(self):
-        filename = filedialog.askopenfilename(
-            title="Select Background Image",
-            filetypes=[("Image files", "*.png *.jpg *.jpeg *.gif *.bmp *.webp"), ("All files", "*.*")]
-        )
-        if filename:
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            dest_path = os.path.join(script_dir, "background_image.jpg")
-            try:
-                shutil.copy2(filename, dest_path)
-            except Exception as e:
-                print(f"Error copying file: {e}")
-                messagebox.showerror("Error", f"Failed: {str(e)}")
 
 class StoppableServer:
     def __init__(self, app, host, port):
@@ -540,85 +527,115 @@ class SpotifyGUI:
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     def setup_ui(self):
-        main_frame = ttk.Frame(self.root, padding="20")
-        main_frame.pack(fill=tk.BOTH, expand=True)
-        title_label = ttk.Label(main_frame, text="Spotify Now Playing", font=("Arial", 16, "bold"))
-        title_label.pack(pady=(0, 20))
-        self.status_frame = ttk.LabelFrame(main_frame, text="Status", padding="10")
-        self.status_frame.pack(fill=tk.X, pady=(0, 15))
-        self.status_label = ttk.Label(self.status_frame, text="Not running", foreground="red")
-        self.status_label.pack()
-        auth_frame = ttk.LabelFrame(main_frame, text="Authentication", padding="10")
-        auth_frame.pack(fill=tk.X, pady=(0, 15))
-        auth_frame.columnconfigure(0, weight=0)
-        auth_frame.columnconfigure(1, weight=1)
-        ttk.Label(auth_frame, text="Client ID:").grid(row=0, column=0, sticky=tk.W, pady=5)
-        self.client_id_entry = ttk.Entry(auth_frame)
-        self.client_id_entry.grid(row=0, column=1, sticky=tk.EW, pady=5, padx=(5, 0))
-        ttk.Label(auth_frame, text="Client Secret:").grid(row=1, column=0, sticky=tk.W, pady=5)
-        self.client_secret_entry = ttk.Entry(auth_frame, show="*")
-        self.client_secret_entry.grid(row=1, column=1, sticky=tk.EW, pady=5, padx=(5, 0))
-        button_container = ttk.Frame(auth_frame)
-        button_container.grid(row=2, column=0, columnspan=2, pady=(10, 0))
-        self.auth_button = ttk.Button(button_container, text="Authenticate", command=self.authenticate)
-        self.auth_button.pack()
-        fade_frame = ttk.LabelFrame(main_frame, text="Fade Settings", padding="10")
-        fade_frame.pack(fill=tk.X, pady=(0, 15))
-        ttk.Label(fade_frame, text="Disappear wait time (seconds):").grid(row=0, column=0, sticky=tk.W)
-        self.fade_wait_var = tk.DoubleVar(value=float(FADE_AFTER_SECONDS))
-        self.fade_wait_entry = ttk.Entry(fade_frame, textvariable=self.fade_wait_var, width=10)
-        self.fade_wait_entry.grid(row=0, column=1, padx=5, pady=5)
-        self.fade_wait_entry.bind('<FocusOut>', lambda e: self.on_fade_change())
-        self.fade_wait_entry.bind('<Return>', lambda e: self.on_fade_change())
-        ttk.Label(fade_frame, text="Fade duration (seconds):").grid(row=1, column=0, sticky=tk.W)
-        self.fade_duration_var = tk.DoubleVar(value=2.0)
-        self.fade_duration_entry = ttk.Entry(fade_frame, textvariable=self.fade_duration_var, width=10)
-        self.fade_duration_entry.grid(row=1, column=1, padx=5, pady=5)
-        self.fade_duration_entry.bind('<FocusOut>', lambda e: self.on_fade_change())
-        self.fade_duration_entry.bind('<Return>', lambda e: self.on_fade_change())
-        color_frame = ttk.LabelFrame(main_frame, text="Color Customization", padding="10")
-        color_frame.pack(fill=tk.X, pady=(0, 15))
-        color_frame.columnconfigure(0, weight=1)
-        color_frame.columnconfigure(1, weight=0)
-        self.color_buttons = []
-        self.color_previews = {}
-        colors = [
-            ("Background Color", "--bg-color"),
-            ("Primary Text", "--text-primary"),
-            ("Progress Bar Start", "--progress-start"),
-            ("Progress Bar End", "--progress-end"),
-            ("Card Background", "--card-bg"),
-        ]
-        for i, (label, var_name) in enumerate(colors):
-            btn = ttk.Button(color_frame, text=label, command=lambda v=var_name: self.choose_color(v))
-            btn.grid(row=i, column=0, pady=5, sticky=tk.W+tk.E, padx=(0, 10))
-            preview = tk.Canvas(color_frame, width=60, height=25, highlightthickness=1, highlightbackground="gray")
-            preview.grid(row=i, column=1, pady=5)
-            self.color_previews[var_name] = preview
-            self.color_buttons.append(btn)
+            main_frame = ttk.Frame(self.root, padding="20")
+            main_frame.pack(fill=tk.BOTH, expand=True)
+            title_label = ttk.Label(main_frame, text="Spotify Now Playing", font=("Arial", 16, "bold"))
+            title_label.pack(pady=(0, 20))
+            self.status_frame = ttk.LabelFrame(main_frame, text="Status", padding="10")
+            self.status_frame.pack(fill=tk.X, pady=(0, 15))
+            self.status_label = ttk.Label(self.status_frame, text="Not running", foreground="red")
+            self.status_label.pack()
+            auth_frame = ttk.LabelFrame(main_frame, text="Authentication", padding="10")
+            auth_frame.pack(fill=tk.X, pady=(0, 15))
+            auth_frame.columnconfigure(0, weight=0)
+            auth_frame.columnconfigure(1, weight=1)
+            ttk.Label(auth_frame, text="Client ID:").grid(row=0, column=0, sticky=tk.W, pady=5)
+            self.client_id_entry = ttk.Entry(auth_frame)
+            self.client_id_entry.grid(row=0, column=1, sticky=tk.EW, pady=5, padx=(5, 0))
+            ttk.Label(auth_frame, text="Client Secret:").grid(row=1, column=0, sticky=tk.W, pady=5)
+            self.client_secret_entry = ttk.Entry(auth_frame, show="*")
+            self.client_secret_entry.grid(row=1, column=1, sticky=tk.EW, pady=5, padx=(5, 0))
+            button_container = ttk.Frame(auth_frame)
+            button_container.grid(row=2, column=0, columnspan=2, pady=(10, 0))
+            self.auth_button = ttk.Button(button_container, text="Authenticate", command=self.authenticate)
+            self.auth_button.pack()
+            help_button = ttk.Button(button_container, text="Help", command=self.show_help)
+            help_button.pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
+            fade_frame = ttk.LabelFrame(main_frame, text="Fade Settings", padding="10")
+            fade_frame.pack(fill=tk.X, pady=(0, 15))
+            ttk.Label(fade_frame, text="Disappear wait time (seconds):").grid(row=0, column=0, sticky=tk.W)
+            self.fade_wait_var = tk.DoubleVar(value=float(FADE_AFTER_SECONDS))
+            self.fade_wait_entry = ttk.Entry(fade_frame, textvariable=self.fade_wait_var, width=10)
+            self.fade_wait_entry.grid(row=0, column=1, padx=5, pady=5)
+            self.fade_wait_entry.bind('<FocusOut>', lambda e: self.on_fade_change())
+            self.fade_wait_entry.bind('<Return>', lambda e: self.on_fade_change())
+            ttk.Label(fade_frame, text="Fade duration (seconds):").grid(row=1, column=0, sticky=tk.W)
+            self.fade_duration_var = tk.DoubleVar(value=2.0)
+            self.fade_duration_entry = ttk.Entry(fade_frame, textvariable=self.fade_duration_var, width=10)
+            self.fade_duration_entry.grid(row=1, column=1, padx=5, pady=5)
+            self.fade_duration_entry.bind('<FocusOut>', lambda e: self.on_fade_change())
+            self.fade_duration_entry.bind('<Return>', lambda e: self.on_fade_change())
+            color_frame = ttk.LabelFrame(main_frame, text="Color Customization", padding="10")
+            color_frame.pack(fill=tk.X, pady=(0, 15))
+            color_frame.columnconfigure(0, weight=1)
+            color_frame.columnconfigure(1, weight=0)
+            self.color_buttons = []
+            self.color_previews = {}
+            colors = [
+                ("Background Color", "--bg-color"),
+                ("Primary Text", "--text-primary"),
+                ("Progress Bar Start", "--progress-start"),
+                ("Progress Bar End", "--progress-end"),
+                ("Card Background", "--card-bg"),
+            ]
+            for i, (label, var_name) in enumerate(colors):
+                btn = ttk.Button(color_frame, text=label, command=lambda v=var_name: self.choose_color(v))
+                btn.grid(row=i, column=0, pady=5, sticky=tk.W+tk.E, padx=(0, 10))
+                preview = tk.Canvas(color_frame, width=60, height=25, highlightthickness=1, highlightbackground="gray")
+                preview.grid(row=i, column=1, pady=5)
+                self.color_previews[var_name] = preview
+                self.color_buttons.append(btn)
+            self.card_var = tk.BooleanVar(value=True)
+            self.bg_image_var = tk.BooleanVar(value=False)
+            bg_image_check = ttk.Checkbutton(color_frame, text="Use background image", variable=self.bg_image_var, command=self.toggle_bg_image)
+            bg_image_check.grid(row=len(colors)+1, column=0, columnspan=2, pady=5, sticky=tk.W)
+            bg_image_frame = ttk.Frame(color_frame)
+            bg_image_frame.grid(row=len(colors)+2, column=0, columnspan=2, pady=5, sticky=tk.W+tk.E)
+            self.bg_image_button = ttk.Button(bg_image_frame, text="Choose Background Image", command=self.choose_bg_image, state=tk.DISABLED)
+            self.bg_image_button.pack(side=tk.LEFT, padx=(0, 10))
+            self.bg_preview_canvas = tk.Canvas(bg_image_frame, width=400, height=150, bg='white', highlightthickness=1, highlightbackground="gray")
+            self.bg_preview_canvas.pack(side=tk.RIGHT)
+            button_frame = ttk.Frame(main_frame)
+            button_frame.pack(fill=tk.X, pady=(10, 0))
+            self.start_button = ttk.Button(button_frame, text="Start Server", command=self.start_server, state=tk.DISABLED)
+            self.stop_button = ttk.Button(button_frame, text="Stop Server", command=self.stop_server, state=tk.DISABLED)
+            self.open_button = ttk.Button(button_frame, text="Open in Browser", command=self.open_browser, state=tk.DISABLED)
+            self.minimize_button = ttk.Button(button_frame, text="Minimize to Tray", command=self.minimize_to_tray)
+            quit_button = ttk.Button(button_frame, text="Quit", command=self.quit_app)
+            self.start_button.pack(side=tk.LEFT, padx=(0, 5), expand=True, fill=tk.X)
+            self.stop_button.pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
+            self.open_button.pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
+            self.minimize_button.pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
+            quit_button.pack(side=tk.LEFT, padx=(5, 0), expand=True, fill=tk.X)
+            self.load_existing_credentials()
+            self.root.after(100, lambda: self.root.geometry(f"500x{self.root.winfo_reqheight()}"))
+            self.root.after(100, self.load_settings_on_startup)
+
+    def start_server(self):
+        if not self.tokens.get("refresh_token"):
+            messagebox.showerror("Error", "Please authenticate first")
+            return
+        if self.server_running:
+            return
+        cli = sys.modules.get('flask.cli')
+        if cli:
+            cli.show_server_banner = lambda *x: None
+        self.stop_event.clear()
+        token_thread = threading.Thread(target=token_manager_loop, args=(self.client_id, self.client_secret, self.tokens, self.stop_event), daemon=True)
+        token_thread.start()
+        poll_thread = threading.Thread(target=playback_poll_loop, args=(self.tokens, self.stop_event), daemon=True)
+        poll_thread.start()
+        self.flask_server = StoppableServer(app, "127.0.0.1", 5000)
+        self.flask_server.start()
+        self.server_running = True
+        self.update_button_states()
+        self.status_label.config(text="Server running at http://127.0.0.1:5000", foreground="green")
+
+    def load_settings_on_startup(self):
+        self.load_settings()
         self.update_color_previews()
-        self.card_var = tk.BooleanVar(value=True)
-        card_check = ttk.Checkbutton(color_frame, text="Show card background", variable=self.card_var, command=self.toggle_card)
-        self.bg_image_var = tk.BooleanVar(value=False)
-        bg_image_check = ttk.Checkbutton(color_frame, text="Use background image", variable=self.bg_image_var, command=self.toggle_bg_image)
-        bg_image_check.grid(row=len(colors)+1, column=0, columnspan=2, pady=5, sticky=tk.W)
-        self.bg_image_button = ttk.Button(color_frame, text="Choose Background Image", command=self.choose_bg_image, state=tk.DISABLED)
-        self.bg_image_button.grid(row=len(colors)+2, column=0, columnspan=2, pady=5)
-        card_check.grid(row=len(colors), column=0, columnspan=2, pady=(10, 5), sticky=tk.W)
-        button_frame = ttk.Frame(main_frame)
-        button_frame.pack(fill=tk.X, pady=(10, 0))
-        self.start_button = ttk.Button(button_frame, text="Start Server", command=self.start_server, state=tk.DISABLED)
-        self.stop_button = ttk.Button(button_frame, text="Stop Server", command=self.stop_server, state=tk.DISABLED)
-        self.open_button = ttk.Button(button_frame, text="Open in Browser", command=self.open_browser, state=tk.DISABLED)
-        self.minimize_button = ttk.Button(button_frame, text="Minimize to Tray", command=self.minimize_to_tray)
-        quit_button = ttk.Button(button_frame, text="Quit", command=self.quit_app)
-        self.start_button.pack(side=tk.LEFT, padx=(0, 5), expand=True, fill=tk.X)
-        self.stop_button.pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
-        self.open_button.pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
-        self.minimize_button.pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
-        quit_button.pack(side=tk.LEFT, padx=(5, 0), expand=True, fill=tk.X)
-        self.load_existing_credentials()
-        self.root.after(100, lambda: self.root.geometry(f"500x{self.root.winfo_reqheight()}"))
+        self.root.after(500, self.update_bg_preview)
+        self.root.geometry(f"500x{self.root.winfo_reqheight()}")
 
     def load_existing_credentials(self):
         self.client_id, self.client_secret = load_client_credentials()
@@ -684,7 +701,138 @@ class SpotifyGUI:
             self.root.after(0, lambda: self.status_label.config(text=f"Auth failed: {str(e)}", foreground="red"))
             self.root.after(0, lambda: messagebox.showerror("Error", f"Authentication failed: {str(e)}"))
 
+    def show_help(self):
+            help_window = tk.Toplevel(self.root)
+            help_window.title("Help - Spotify Now Playing")
+            help_window.geometry("600x700")
+            help_window.resizable(True, True)
+            
+            text_frame = ttk.Frame(help_window, padding="10")
+            text_frame.pack(fill=tk.BOTH, expand=True)
+            
+            scrollbar = ttk.Scrollbar(text_frame)
+            scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+            
+            help_text = tk.Text(text_frame, wrap=tk.WORD, yscrollcommand=scrollbar.set, 
+                            font=("Arial", 10), padx=10, pady=10)
+            help_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            scrollbar.config(command=help_text.yview)
+            
+            content = """SPOTIFY NOW PLAYING OVERLAY
+    Created by NeonLightning
+    GitHub: https://github.com/neonlightning/neonspotobs/
+
+    ═══════════════════════════════════════════════════════
+
+    SETUP INSTRUCTIONS
+
+    1. Create a Spotify Developer App:
+    • Go to https://developer.spotify.com/dashboard
+    • Log in with your Spotify account
+    • Click "Create app"
+    • Fill in the app name and description (can be anything)
+    
+    2. Configure the Redirect URI:
+    • In your app settings, click "Edit Settings"
+    • Under "Redirect URIs", add: http://127.0.0.1:5000/callback
+    • Click "Add" then "Save"
+    
+    3. Get Your Credentials:
+    • Copy your "Client ID" from the app dashboard
+    • Click "View client secret" and copy your "Client Secret"
+    • Paste both into this application
+
+    4. Authenticate:
+    • Click the "Authenticate" button
+    • Your browser will open to authorize the app
+    • After authorization, you'll be redirected back
+    
+    5. Start the Server:
+    • Click "Start Server" to begin streaming your now playing data
+    • Click "Open in Browser" to view the overlay
+    • Add the URL (http://127.0.0.1:5000) as a Browser Source in OBS
+
+    ═══════════════════════════════════════════════════════
+
+    SETTINGS EXPLAINED
+
+    AUTHENTICATION
+    - Client ID: Your Spotify app's unique identifier
+    - Client Secret: Your app's private key (keep this secret!)
+
+    FADE SETTINGS
+    - Disappear wait time: How many seconds after music stops before the overlay fades out
+    - Fade duration: How long the fade out animation takes
+
+    COLOR CUSTOMIZATION
+    - Background Color: The page background color
+    - Primary Text: Main text color (song title)
+    - Progress Bar Start: Left side color of the progress bar gradient
+    - Progress Bar End: Right side color of the progress bar gradient
+    - Card Background: The background color of the now playing card
+
+    - Show card background: Toggle the card background on/off
+    - Use background image: Enable/disable a custom background image
+    - Choose Background Image: Select an image file to use as the background
+
+    ═══════════════════════════════════════════════════════
+
+    USAGE TIPS
+
+    - The overlay automatically updates every 2 seconds
+    - When music is paused, the overlay will fade out after the configured wait time
+    - You can customize colors to match your stream theme
+    - The overlay works with any browser source in OBS, Streamlabs, etc.
+    - Minimize to tray to keep the server running in the background
+
+    ═══════════════════════════════════════════════════════
+
+    TROUBLESHOOTING
+
+    - If authentication fails, double-check your Client ID and Secret
+    - Make sure the redirect URI is exactly: http://127.0.0.1:5000/callback
+    - If the overlay doesn't update, ensure Spotify is playing and you're logged in
+    - Port 5000 must be available (not used by another application)
+
+    ═══════════════════════════════════════════════════════
+
+    For more information, issues, or updates:
+    https://github.com/neonlightning/neonspotobs/
+    """
+            
+            help_text.insert("1.0", content)
+            help_text.config(state=tk.DISABLED)
+            
+            def open_github(event=None):
+                webbrowser.open("https://github.com/neonlightning/neonspotobs/")
+            
+            def open_spotify_dashboard(event=None):
+                webbrowser.open("https://developer.spotify.com/dashboard")
+            
+            def copy_callback_uri(event=None):
+                self.root.clipboard_clear()
+                self.root.clipboard_append("http://127.0.0.1:5000/callback")
+                messagebox.showinfo("Copied", "Callback URI copied to clipboard!\nhttp://127.0.0.1:5000/callback")
+            
+            # Button frame
+            button_frame = ttk.Frame(help_window, padding="10")
+            button_frame.pack(fill=tk.X)
+            
+            github_button = ttk.Button(button_frame, text="Open GitHub", command=open_github)
+            github_button.pack(side=tk.LEFT, padx=5)
+            
+            spotify_button = ttk.Button(button_frame, text="Spotify Dashboard", command=open_spotify_dashboard)
+            spotify_button.pack(side=tk.LEFT, padx=5)
+            
+            copy_button = ttk.Button(button_frame, text="Copy Callback URI", command=copy_callback_uri)
+            copy_button.pack(side=tk.LEFT, padx=5)
+            
+            close_button = ttk.Button(button_frame, text="Close", command=help_window.destroy)
+            close_button.pack(side=tk.RIGHT, padx=5)
+
     def update_color_previews(self):
+        if not hasattr(self, 'color_previews'):
+            return
         css_content = load_css()
         lines = css_content.split('\n')
         for var_name, canvas in self.color_previews.items():
@@ -743,6 +891,7 @@ class SpotifyGUI:
         if self.bg_image_var.get():
             self.bg_image_button.config(state=tk.NORMAL)
             self.update_css_color("--bg-image", "url('/background_image.jpg')")
+            self.update_bg_preview()
         else:
             self.bg_image_button.config(state=tk.DISABLED)
             self.update_css_color("--bg-image", "none")
@@ -753,12 +902,48 @@ class SpotifyGUI:
             filetypes=[("Image files", "*.png *.jpg *.jpeg *.gif *.bmp *.webp"), ("All files", "*.*")]
         )
         if filename:
-            dest_path = "background_image.jpg"
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            dest_path = os.path.join(script_dir, "background_image.jpg")
             try:
                 shutil.copy2(filename, dest_path)
                 self.update_css_color("--bg-image", "url('/background_image.jpg')")
+                self.update_bg_preview()
             except Exception as e:
+                print(f"Error copying file: {e}")
                 messagebox.showerror("Error", f"Failed: {str(e)}")
+
+    def update_bg_preview(self):
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        bg_path = os.path.join(script_dir, "background_image.jpg")
+        self.bg_preview_canvas.delete("all")
+        self.bg_preview_canvas.update_idletasks()
+        canvas_width = self.bg_preview_canvas.winfo_width()
+        canvas_height = self.bg_preview_canvas.winfo_height()
+        if canvas_width <= 1 or canvas_height <= 1:
+            canvas_width = 400
+            canvas_height = 150
+            self.bg_preview_canvas.config(width=canvas_width, height=canvas_height)
+            self.bg_preview_canvas.update_idletasks()
+        if os.path.exists(bg_path):
+            try:
+                img = Image.open(bg_path)
+                img_width, img_height = img.size
+                width_ratio = canvas_width / img_width
+                height_ratio = canvas_height / img_height
+                scale_factor = min(width_ratio, height_ratio)
+                new_width = int(img_width * scale_factor)
+                new_height = int(img_height * scale_factor)
+                img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                photo = ImageTk.PhotoImage(img)
+                self.bg_preview_photo = photo
+                x = canvas_width // 2
+                y = canvas_height // 2
+                self.bg_preview_canvas.create_image(x, y, image=photo, anchor=tk.CENTER)
+                self.bg_preview_canvas.create_rectangle(2, 2, canvas_width-2, canvas_height-2, outline="black", width=1)
+            except Exception as e:
+                self.bg_preview_canvas.create_text(canvas_width//2, canvas_height//2, text=f"Error\n{str(e)}", fill="red", font=('Arial', 10), justify=tk.CENTER)
+        else:
+            self.bg_preview_canvas.create_text(canvas_width//2, canvas_height//2, text="No Background Image", fill="gray", font=('Arial', 12), justify=tk.CENTER)
 
     def on_fade_change(self):
         try:
@@ -803,28 +988,9 @@ class SpotifyGUI:
                     self.bg_image_var.set(has_image)
                     if hasattr(self, 'bg_image_button'):
                         self.bg_image_button.config(state=tk.NORMAL if has_image else tk.DISABLED)
+                    self.root.after(500, self.update_bg_preview)
                 except:
                     pass
-
-    def start_server(self):
-        if not self.tokens.get("refresh_token"):
-            messagebox.showerror("Error", "Please authenticate first")
-            return
-        if self.server_running:
-            return
-        cli = sys.modules.get('flask.cli')
-        if cli:
-            cli.show_server_banner = lambda *x: None
-        self.stop_event.clear()
-        token_thread = threading.Thread(target=token_manager_loop, args=(self.client_id, self.client_secret, self.tokens, self.stop_event), daemon=True)
-        token_thread.start()
-        poll_thread = threading.Thread(target=playback_poll_loop, args=(self.tokens, self.stop_event), daemon=True)
-        poll_thread.start()
-        self.flask_server = StoppableServer(app, "127.0.0.1", 5000)
-        self.flask_server.start()
-        self.server_running = True
-        self.update_button_states()
-        self.status_label.config(text="Server running at http://127.0.0.1:5000", foreground="green")
 
     def stop_server(self):
         if not self.server_running:

@@ -1,6 +1,6 @@
 :root {
     --bg-color: #00ff00;
-    --bg-image: none;
+    --bg-image: url('/background_image.jpg');
     --text-primary: #eee;
     --text-secondary: #cfcfcf;
     --text-tertiary: #9a9a9a;
@@ -12,8 +12,8 @@
     --card-bg: rgba(30, 30, 30);
     --card-shadow: 0 8px 32px rgba(0, 0, 0);
 
-    --fade-wait: 10s;
-    --fade-duration: 2s;
+    --fade-wait: 10.0s;
+    --fade-duration: 2.0s;
     --fade-ease: ease-out;
 
     --card-display: flex;
