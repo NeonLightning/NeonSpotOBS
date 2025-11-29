@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
-import base64, json, os, queue, threading, time, urllib.parse, requests, logging, sys
+import base64, json, os, queue, threading, time, urllib.parse, requests, logging, sys, warnings, tkinter as tk, pystray, shutil, webbrowser
 from datetime import datetime, timedelta, timezone
 from flask import Flask, redirect, render_template_string, request
-import tkinter as tk
-from tkinter import ttk, colorchooser, messagebox
-import pystray
+from tkinter import ttk, colorchooser, messagebox, filedialog
+from werkzeug.serving import make_server
 from PIL import Image, ImageDraw
+
+warnings.filterwarnings('ignore', category=UserWarning, module='PIL')
 
 TOKENS_FILE = "spotify_tokens.json"
 CLIENT_FILE = "spotify_client.json"
-CSS_FILE = "styles.css"
+CSS_FILE = "settings.css"
 REDIRECT_URI = "http://127.0.0.1:5000/callback"
 SCOPE = "user-read-currently-playing user-read-playback-state"
 POLL_INTERVAL = 2
+FADE_AFTER_SECONDS = 10
 
 app = Flask(__name__)
 log = logging.getLogger('werkzeug')
@@ -22,21 +24,28 @@ logging.getLogger('werkzeug').disabled = True
 current_track_data = None
 data_lock = threading.Lock()
 auth_code_q = queue.Queue()
+last_track_time = None
+gui = None
 
 def create_default_css():
     default_css = """:root {
-    /* Color Variables */
     --bg-color: #00ff00;
+    --bg-image: none;
     --text-primary: #eee;
     --text-secondary: #cfcfcf;
     --text-tertiary: #9a9a9a;
+
     --progress-bg: rgba(255, 0, 0);
     --progress-start: rgba(94, 255, 155);
     --progress-end: rgba(0, 176, 255);
+
     --card-bg: rgba(30, 30, 30);
     --card-shadow: 0 8px 32px rgba(0, 0, 0);
 
-    /* Card Toggle: set to 'none' to display directly on background, 'flex' to show card */
+    --fade-wait: 10s;
+    --fade-duration: 2s;
+    --fade-ease: ease-out;
+
     --card-display: flex;
 }
 """
@@ -148,6 +157,7 @@ def token_manager_loop(client_id, client_secret, tokens_container: dict, stop_ev
         time.sleep(10)
 
 def playback_poll_loop(tokens_container: dict, stop_event: threading.Event):
+    global last_track_time
     last_update = 0
     while not stop_event.is_set():
         access_token = tokens_container.get("access_token")
@@ -161,6 +171,8 @@ def playback_poll_loop(tokens_container: dict, stop_event: threading.Event):
                 with data_lock:
                     global current_track_data
                     current_track_data = data
+                    if data and data.get('item'):
+                        last_track_time = time.time()
                 last_update = current_time
             except Exception:
                 pass
@@ -168,7 +180,7 @@ def playback_poll_loop(tokens_container: dict, stop_event: threading.Event):
 
 def format_track_display(data):
     if not data or not data.get('item'):
-        return '<div class="none">Nothing is playing or no active device.</div>'
+        return ''
     item = data['item']
     title = item.get('name', '')
     artists = ', '.join(artist['name'] for artist in item.get('artists', []))
@@ -225,28 +237,16 @@ INDEX_HTML = """
             border-radius: 12px;
             box-shadow: var(--card-shadow);
             backdrop-filter: blur(10px);
+            transition: opacity var(--fade-duration) var(--fade-ease, ease-out);
         }
-        @supports (display: var(--card-display)) {
-            .card {
-                background: none;
-                border-radius: 0;
-                box-shadow: none;
-                backdrop-filter: none;
-            }
-            .card::before {
-                content: '';
-                position: absolute;
-                top: 0;
-                left: 0;
-                right: 0;
-                bottom: 0;
-                background: var(--card-bg);
-                border-radius: 12px;
-                box-shadow: var(--card-shadow);
-                backdrop-filter: blur(10px);
-                display: var(--card-display);
-                z-index: -1;
-            }
+        .card.has-bg-image {
+            background-image: url('/background_image.jpg');
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+        }
+        .card.fade-out {
+            opacity: 0;
         }
         .meta {
             display: flex;
@@ -313,14 +313,14 @@ INDEX_HTML = """
     </style>
 </head>
 <body>
-    <div class="card">
+    <div class="card" id="card">
         <div id="content">{{ track_html|safe }}</div>
     </div>
 <script>
 (function() {
     const cardDisplay = getComputedStyle(document.documentElement).getPropertyValue('--card-display').trim();
+    const card = document.querySelector('.card');
     if (cardDisplay === 'none') {
-        const card = document.querySelector('.card');
         card.style.background = 'transparent';
         card.style.borderRadius = '0';
         card.style.boxShadow = 'none';
@@ -328,19 +328,74 @@ INDEX_HTML = """
     }
 })();
 let isUpdating = false;
+let lastTrackTime = null;
+let fadeTimeout = null;
+function getFadeDelay() {
+    const rootStyles = getComputedStyle(document.documentElement);
+    return parseFloat(rootStyles.getPropertyValue('--fade-wait').trim().replace("s","")) * 1000;
+}
+function checkFadeOut() {
+    if (lastTrackTime === null) {
+        return;
+    }
+    const FADE_DELAY = getFadeDelay();
+    const timeSinceLastTrack = Date.now() - lastTrackTime;
+    if (timeSinceLastTrack >= FADE_DELAY) {
+        card.classList.add('fade-out');
+    } else {
+        card.classList.remove('fade-out');
+        if (fadeTimeout) clearTimeout(fadeTimeout);
+        fadeTimeout = setTimeout(checkFadeOut, FADE_DELAY - timeSinceLastTrack + 100);
+    }
+}
 async function updateTrack() {
     if (isUpdating) return;
     isUpdating = true;
     try {
-        const response = await fetch('/track-html');
-        const html = await response.text();
-        document.getElementById('content').innerHTML = html;
+        const response = await fetch('/track-data');
+        const data = await response.json();
+        const content = document.getElementById('content');
+        const card = document.getElementById('card');
+        content.innerHTML = data.html;
+        if (data.html.trim() === '' || !data.has_track) {
+            card.style.display = 'none';
+        } else {
+            card.style.display = 'block';
+            if (data.is_playing) {
+                lastTrackTime = Date.now();
+                card.classList.remove('fade-out');
+                if (fadeTimeout) clearTimeout(fadeTimeout);
+            } else {
+                if (!lastTrackTime) lastTrackTime = Date.now();
+                checkFadeOut();
+            }
+        }
     } catch (error) {
     }
     isUpdating = false;
 }
 updateTrack();
 setInterval(updateTrack, {{ poll_interval }});
+async function checkCSSUpdates() {
+    try {
+        const response = await fetch('/css-vars');
+        const vars = await response.json();
+        const root = document.documentElement;
+        const card = document.getElementById('card');
+        for (const [varName, varValue] of Object.entries(vars)) {
+            root.style.setProperty(varName, varValue);
+            if (varName === '--bg-image') {
+                if (varValue === 'none') {
+                    card.classList.remove('has-bg-image');
+                } else if (varValue.includes('url(')) {
+                    card.classList.add('has-bg-image');
+                }
+            }
+        }
+    } catch (error) {
+    }
+}
+setInterval(checkCSSUpdates, 2000);
 </script>
 </body>
 </html>
@@ -352,18 +407,62 @@ def index():
         data = current_track_data
     track_html = format_track_display(data)
     css_content = load_css()
+    has_content = bool(track_html.strip())
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    bg_path = os.path.join(script_dir, "background_image.jpg")
+    has_bg = os.path.exists(bg_path)
+    css_lines = css_content.split('\n')
+    bg_enabled = False
+    for line in css_lines:
+        if '--bg-image' in line and ':' in line:
+            value = line.split(':')[1].split(';')[0].strip()
+            bg_enabled = value != "none"
+            break
+    card_classes = "card"
+    if has_bg and bg_enabled:
+        card_classes += " has-bg-image"
+    card_style = '' if has_content else 'display: none;'
+    html = INDEX_HTML.replace('class="card" id="card">', f'class="{card_classes}" id="card" style="{card_style}">')
     return render_template_string(
-        INDEX_HTML, 
+        html, 
         track_html=track_html, 
         poll_interval=POLL_INTERVAL * 1000,
         css_content=css_content
     )
+
+@app.route("/css-vars")
+def css_vars():
+    css_content = load_css()
+    lines = css_content.split('\n')
+    vars_dict = {}
+    for line in lines:
+        if '--' in line and ':' in line:
+            parts = line.strip().split(':', 1)
+            if len(parts) == 2:
+                var_name = parts[0].strip()
+                var_value = parts[1].split(';')[0].strip()
+                vars_dict[var_name] = var_value
+    return vars_dict
 
 @app.route("/track-html")
 def track_html():
     with data_lock:
         data = current_track_data
     return format_track_display(data)
+
+@app.route("/track-data")
+def track_data():
+    with data_lock:
+        data = current_track_data
+        has_track = data is not None and data.get('item') is not None
+        is_playing = False
+        if data and data.get("is_playing") is not None:
+            is_playing = data["is_playing"]
+        return {
+            'html': format_track_display(data),
+            'has_track': has_track,
+            'is_playing': data.get("is_playing", False)
+        }
 
 @app.route("/callback")
 def callback():
@@ -382,42 +481,101 @@ def callback():
     <p>You can close this tab.</p>
     </body></html>"""
 
+@app.route("/background_image.jpg")
+def background_image():
+    from flask import send_file
+    import os
+    file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "background_image.jpg")
+    print(f"Looking for background image at: {file_path}")
+    print(f"File exists: {os.path.exists(file_path)}")
+    if os.path.exists(file_path):
+        return send_file(file_path, mimetype='image/jpeg')
+    print("Background image not found!")
+    return "Image not found", 404
+    def choose_bg_image(self):
+        filename = filedialog.askopenfilename(
+            title="Select Background Image",
+            filetypes=[("Image files", "*.png *.jpg *.jpeg *.gif *.bmp *.webp"), ("All files", "*.*")]
+        )
+        if filename:
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            dest_path = os.path.join(script_dir, "background_image.jpg")
+            try:
+                shutil.copy2(filename, dest_path)
+            except Exception as e:
+                print(f"Error copying file: {e}")
+                messagebox.showerror("Error", f"Failed: {str(e)}")
+
+class StoppableServer:
+    def __init__(self, app, host, port):
+        self.server = make_server(host, port, app)
+        self.thread = None
+
+    def start(self):
+        self.thread = threading.Thread(target=self.server.serve_forever)
+        self.thread.daemon = True
+        self.thread.start()
+
+    def stop(self):
+        if self.server:
+            self.server.shutdown()
+        if self.thread:
+            self.thread.join(timeout=5)
+
 class SpotifyGUI:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("Spotify Now Playing")
-        self.root.geometry("500x620")
+        self.root.geometry("500x10")
         self.root.resizable(False, False)
         self.client_id = None
         self.client_secret = None
         self.tokens = {}
         self.stop_event = threading.Event()
         self.tray_icon = None
-        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+        self.server_running = False
+        self.flask_server = None
         self.setup_ui()
+        self.load_settings()
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     def setup_ui(self):
         main_frame = ttk.Frame(self.root, padding="20")
         main_frame.pack(fill=tk.BOTH, expand=True)
-        title_label = ttk.Label(main_frame, text="Spotify Now Playing", 
-                                font=("Arial", 16, "bold"))
+        title_label = ttk.Label(main_frame, text="Spotify Now Playing", font=("Arial", 16, "bold"))
         title_label.pack(pady=(0, 20))
         self.status_frame = ttk.LabelFrame(main_frame, text="Status", padding="10")
         self.status_frame.pack(fill=tk.X, pady=(0, 15))
-        self.status_label = ttk.Label(self.status_frame, text="Not running", 
-                                    foreground="red")
+        self.status_label = ttk.Label(self.status_frame, text="Not running", foreground="red")
         self.status_label.pack()
         auth_frame = ttk.LabelFrame(main_frame, text="Authentication", padding="10")
         auth_frame.pack(fill=tk.X, pady=(0, 15))
+        auth_frame.columnconfigure(0, weight=0)
+        auth_frame.columnconfigure(1, weight=1)
         ttk.Label(auth_frame, text="Client ID:").grid(row=0, column=0, sticky=tk.W, pady=5)
-        self.client_id_entry = ttk.Entry(auth_frame, width=40)
-        self.client_id_entry.grid(row=0, column=1, pady=5, padx=(5, 0))
+        self.client_id_entry = ttk.Entry(auth_frame)
+        self.client_id_entry.grid(row=0, column=1, sticky=tk.EW, pady=5, padx=(5, 0))
         ttk.Label(auth_frame, text="Client Secret:").grid(row=1, column=0, sticky=tk.W, pady=5)
-        self.client_secret_entry = ttk.Entry(auth_frame, width=40, show="*")
-        self.client_secret_entry.grid(row=1, column=1, pady=5, padx=(5, 0))
-        self.auth_button = ttk.Button(auth_frame, text="Authenticate", 
-                                    command=self.authenticate)
-        self.auth_button.grid(row=2, column=0, columnspan=2, pady=(10, 0))
+        self.client_secret_entry = ttk.Entry(auth_frame, show="*")
+        self.client_secret_entry.grid(row=1, column=1, sticky=tk.EW, pady=5, padx=(5, 0))
+        button_container = ttk.Frame(auth_frame)
+        button_container.grid(row=2, column=0, columnspan=2, pady=(10, 0))
+        self.auth_button = ttk.Button(button_container, text="Authenticate", command=self.authenticate)
+        self.auth_button.pack()
+        fade_frame = ttk.LabelFrame(main_frame, text="Fade Settings", padding="10")
+        fade_frame.pack(fill=tk.X, pady=(0, 15))
+        ttk.Label(fade_frame, text="Disappear wait time (seconds):").grid(row=0, column=0, sticky=tk.W)
+        self.fade_wait_var = tk.DoubleVar(value=float(FADE_AFTER_SECONDS))
+        self.fade_wait_entry = ttk.Entry(fade_frame, textvariable=self.fade_wait_var, width=10)
+        self.fade_wait_entry.grid(row=0, column=1, padx=5, pady=5)
+        self.fade_wait_entry.bind('<FocusOut>', lambda e: self.on_fade_change())
+        self.fade_wait_entry.bind('<Return>', lambda e: self.on_fade_change())
+        ttk.Label(fade_frame, text="Fade duration (seconds):").grid(row=1, column=0, sticky=tk.W)
+        self.fade_duration_var = tk.DoubleVar(value=2.0)
+        self.fade_duration_entry = ttk.Entry(fade_frame, textvariable=self.fade_duration_var, width=10)
+        self.fade_duration_entry.grid(row=1, column=1, padx=5, pady=5)
+        self.fade_duration_entry.bind('<FocusOut>', lambda e: self.on_fade_change())
+        self.fade_duration_entry.bind('<Return>', lambda e: self.on_fade_change())
         color_frame = ttk.LabelFrame(main_frame, text="Color Customization", padding="10")
         color_frame.pack(fill=tk.X, pady=(0, 15))
         color_frame.columnconfigure(0, weight=1)
@@ -432,34 +590,35 @@ class SpotifyGUI:
             ("Card Background", "--card-bg"),
         ]
         for i, (label, var_name) in enumerate(colors):
-            btn = ttk.Button(color_frame, text=label, 
-                        command=lambda v=var_name: self.choose_color(v))
+            btn = ttk.Button(color_frame, text=label, command=lambda v=var_name: self.choose_color(v))
             btn.grid(row=i, column=0, pady=5, sticky=tk.W+tk.E, padx=(0, 10))
-            preview = tk.Canvas(color_frame, width=60, height=25, highlightthickness=1, 
-                            highlightbackground="gray")
+            preview = tk.Canvas(color_frame, width=60, height=25, highlightthickness=1, highlightbackground="gray")
             preview.grid(row=i, column=1, pady=5)
             self.color_previews[var_name] = preview
             self.color_buttons.append(btn)
         self.update_color_previews()
         self.card_var = tk.BooleanVar(value=True)
-        card_check = ttk.Checkbutton(color_frame, text="Show card background", 
-                                    variable=self.card_var,
-                                    command=self.toggle_card)
+        card_check = ttk.Checkbutton(color_frame, text="Show card background", variable=self.card_var, command=self.toggle_card)
+        self.bg_image_var = tk.BooleanVar(value=False)
+        bg_image_check = ttk.Checkbutton(color_frame, text="Use background image", variable=self.bg_image_var, command=self.toggle_bg_image)
+        bg_image_check.grid(row=len(colors)+1, column=0, columnspan=2, pady=5, sticky=tk.W)
+        self.bg_image_button = ttk.Button(color_frame, text="Choose Background Image", command=self.choose_bg_image, state=tk.DISABLED)
+        self.bg_image_button.grid(row=len(colors)+2, column=0, columnspan=2, pady=5)
         card_check.grid(row=len(colors), column=0, columnspan=2, pady=(10, 5), sticky=tk.W)
         button_frame = ttk.Frame(main_frame)
         button_frame.pack(fill=tk.X, pady=(10, 0))
-        self.start_button = ttk.Button(button_frame, text="Start Server", 
-                                    command=self.start_server, state=tk.DISABLED)
-        self.start_button.pack(side=tk.LEFT, padx=(0, 5), expand=True, fill=tk.X)
-        self.open_button = ttk.Button(button_frame, text="Open in Browser", 
-                                    command=self.open_browser, state=tk.DISABLED)
-        self.open_button.pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
-        self.minimize_button = ttk.Button(button_frame, text="Minimize to Tray", 
-                                        command=self.minimize_to_tray)
-        self.minimize_button.pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
+        self.start_button = ttk.Button(button_frame, text="Start Server", command=self.start_server, state=tk.DISABLED)
+        self.stop_button = ttk.Button(button_frame, text="Stop Server", command=self.stop_server, state=tk.DISABLED)
+        self.open_button = ttk.Button(button_frame, text="Open in Browser", command=self.open_browser, state=tk.DISABLED)
+        self.minimize_button = ttk.Button(button_frame, text="Minimize to Tray", command=self.minimize_to_tray)
         quit_button = ttk.Button(button_frame, text="Quit", command=self.quit_app)
+        self.start_button.pack(side=tk.LEFT, padx=(0, 5), expand=True, fill=tk.X)
+        self.stop_button.pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
+        self.open_button.pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
+        self.minimize_button.pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
         quit_button.pack(side=tk.LEFT, padx=(5, 0), expand=True, fill=tk.X)
         self.load_existing_credentials()
+        self.root.after(100, lambda: self.root.geometry(f"500x{self.root.winfo_reqheight()}"))
 
     def load_existing_credentials(self):
         self.client_id, self.client_secret = load_client_credentials()
@@ -469,10 +628,22 @@ class SpotifyGUI:
             self.tokens = load_tokens()
             if "refresh_token" in self.tokens:
                 self.status_label.config(text="Authenticated", foreground="green")
-                self.start_button.config(state=tk.NORMAL)
                 self.auth_button.config(text="Re-authenticate")
+                if not self.server_running:
+                    self.start_button.config(state=tk.NORMAL)
             else:
                 self.status_label.config(text="Authentication required", foreground="orange")
+        self.update_button_states()
+
+    def update_button_states(self):
+        if self.server_running:
+            self.start_button.config(state=tk.DISABLED)
+            self.stop_button.config(state=tk.NORMAL)
+            self.open_button.config(state=tk.NORMAL)
+        else:
+            self.start_button.config(state=tk.NORMAL)
+            self.stop_button.config(state=tk.DISABLED)
+            self.open_button.config(state=tk.DISABLED)
 
     def authenticate(self):
         client_id = self.client_id_entry.get().strip()
@@ -484,9 +655,7 @@ class SpotifyGUI:
         self.client_id = client_id
         self.client_secret = client_secret
         flask_thread = threading.Thread(
-            target=lambda: app.run(host="127.0.0.1", port=5000, debug=False, use_reloader=False), 
-            daemon=True
-        )
+            target=lambda: app.run(host="127.0.0.1", port=5000, debug=False, use_reloader=False), daemon=True)
         flask_thread.start()
         time.sleep(1)
         url = build_auth_url(client_id)
@@ -507,16 +676,13 @@ class SpotifyGUI:
                             timedelta(seconds=int(token_response.get("expires_in", 3600)))).isoformat(),
             }
             save_tokens(self.tokens)
-            self.root.after(0, lambda: self.status_label.config(
-                text="Authenticated successfully!", foreground="green"))
+            self.root.after(0, lambda: self.status_label.config(text="Authenticated successfully!", foreground="green"))
             self.root.after(0, lambda: self.start_button.config(state=tk.NORMAL))
-            self.root.after(0, lambda: messagebox.showinfo(
-                "Success", "Authentication successful! You can now start the server."))
+            self.root.after(0, lambda: self.auth_button.config(text="Re-authenticate"))
+            self.root.after(0, lambda: messagebox.showinfo("Success", "Authentication successful! You can now start the server."))
         except Exception as e:
-            self.root.after(0, lambda: self.status_label.config(
-                text=f"Auth failed: {str(e)}", foreground="red"))
-            self.root.after(0, lambda: messagebox.showerror(
-                "Error", f"Authentication failed: {str(e)}"))
+            self.root.after(0, lambda: self.status_label.config(text=f"Auth failed: {str(e)}", foreground="red"))
+            self.root.after(0, lambda: messagebox.showerror("Error", f"Authentication failed: {str(e)}"))
 
     def update_color_previews(self):
         css_content = load_css()
@@ -549,8 +715,7 @@ class SpotifyGUI:
 
     def choose_color(self, var_name):
         current_color = self.extract_color_from_css(load_css().split('\n'), var_name)
-        color = colorchooser.askcolor(title=f"Choose color for {var_name}", 
-                                    initialcolor=current_color if current_color and current_color.startswith('#') else None)
+        color = colorchooser.askcolor(title=f"Choose color for {var_name}", initialcolor=current_color if current_color and current_color.startswith('#') else None)
         if color[1]:
             self.update_css_color(var_name, color[1])
             try:
@@ -569,43 +734,110 @@ class SpotifyGUI:
                 break
         new_css = '\n'.join(lines)
         save_css(new_css)
-        messagebox.showinfo("Success", f"Color updated! Refresh browser to see changes.")
 
     def toggle_card(self):
         display_value = "flex" if self.card_var.get() else "none"
         self.update_css_color("--card-display", display_value)
 
+    def toggle_bg_image(self):
+        if self.bg_image_var.get():
+            self.bg_image_button.config(state=tk.NORMAL)
+            self.update_css_color("--bg-image", "url('/background_image.jpg')")
+        else:
+            self.bg_image_button.config(state=tk.DISABLED)
+            self.update_css_color("--bg-image", "none")
+
+    def choose_bg_image(self):
+        filename = filedialog.askopenfilename(
+            title="Select Background Image",
+            filetypes=[("Image files", "*.png *.jpg *.jpeg *.gif *.bmp *.webp"), ("All files", "*.*")]
+        )
+        if filename:
+            dest_path = "background_image.jpg"
+            try:
+                shutil.copy2(filename, dest_path)
+                self.update_css_color("--bg-image", "url('/background_image.jpg')")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed: {str(e)}")
+
+    def on_fade_change(self):
+        try:
+            wait_val = float(self.fade_wait_var.get())
+            duration_val = float(self.fade_duration_var.get())
+            css = load_css().split("\n")
+            for i, line in enumerate(css):
+                if '--fade-wait' in line:
+                    css[i] = f"    --fade-wait: {wait_val}s;"
+                elif '--fade-duration' in line:
+                    css[i] = f"    --fade-duration: {duration_val}s;"
+            save_css("\n".join(css))
+        except ValueError:
+            pass
+
+    def load_settings(self):
+        css_content = load_css()
+        lines = css_content.split('\n')
+        for line in lines:
+            if '--fade-wait' in line and ':' in line:
+                try:
+                    value = line.split(':')[1].split(';')[0].strip().replace('s', '')
+                    self.fade_wait_var.set(float(value))
+                except:
+                    pass
+            elif '--fade-duration' in line and ':' in line:
+                try:
+                    value = line.split(':')[1].split(';')[0].strip().replace('s', '')
+                    self.fade_duration_var.set(float(value))
+                except:
+                    pass
+            elif '--card-display' in line and ':' in line:
+                try:
+                    value = line.split(':')[1].split(';')[0].strip()
+                    self.card_var.set(value == "flex")
+                except:
+                    pass
+            elif '--bg-image' in line and ':' in line:
+                try:
+                    value = line.split(':')[1].split(';')[0].strip()
+                    has_image = value != "none"
+                    self.bg_image_var.set(has_image)
+                    if hasattr(self, 'bg_image_button'):
+                        self.bg_image_button.config(state=tk.NORMAL if has_image else tk.DISABLED)
+                except:
+                    pass
+
     def start_server(self):
         if not self.tokens.get("refresh_token"):
             messagebox.showerror("Error", "Please authenticate first")
             return
+        if self.server_running:
+            return
         cli = sys.modules.get('flask.cli')
         if cli:
             cli.show_server_banner = lambda *x: None
-        token_thread = threading.Thread(
-            target=token_manager_loop, 
-            args=(self.client_id, self.client_secret, self.tokens, self.stop_event), 
-            daemon=True
-        )
+        self.stop_event.clear()
+        token_thread = threading.Thread(target=token_manager_loop, args=(self.client_id, self.client_secret, self.tokens, self.stop_event), daemon=True)
         token_thread.start()
-        poll_thread = threading.Thread(
-            target=playback_poll_loop, 
-            args=(self.tokens, self.stop_event), 
-            daemon=True
-        )
+        poll_thread = threading.Thread(target=playback_poll_loop, args=(self.tokens, self.stop_event), daemon=True)
         poll_thread.start()
-        flask_thread = threading.Thread(
-            target=lambda: app.run(host="127.0.0.1", port=5000, debug=False, use_reloader=False), 
-            daemon=True
-        )
-        flask_thread.start()
-        self.status_label.config(text="Server running at http://127.0.0.1:5000", 
-                                foreground="green")
-        self.start_button.config(state=tk.DISABLED)
-        self.open_button.config(state=tk.NORMAL)
+        self.flask_server = StoppableServer(app, "127.0.0.1", 5000)
+        self.flask_server.start()
+        self.server_running = True
+        self.update_button_states()
+        self.status_label.config(text="Server running at http://127.0.0.1:5000", foreground="green")
+
+    def stop_server(self):
+        if not self.server_running:
+            return
+        self.stop_event.set()
+        if self.flask_server:
+            self.flask_server.stop()
+            self.flask_server = None
+        self.server_running = False
+        self.update_button_states()
+        self.status_label.config(text="Server stopped", foreground="red")
 
     def open_browser(self):
-        import webbrowser
         webbrowser.open("http://127.0.0.1:5000")
 
     def minimize_to_tray(self):
@@ -636,6 +868,7 @@ class SpotifyGUI:
 
     def quit_app(self):
         self.stop_event.set()
+        self.server_running = False
         if self.tray_icon:
             self.tray_icon.stop()
         self.root.quit()
@@ -645,6 +878,7 @@ class SpotifyGUI:
         self.root.mainloop()
 
 def main():
+    global gui
     create_default_css()
     gui = SpotifyGUI()
     gui.run()

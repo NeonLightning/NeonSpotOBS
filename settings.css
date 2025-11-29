@@ -1,0 +1,20 @@
+:root {
+    --bg-color: #00ff00;
+    --bg-image: none;
+    --text-primary: #eee;
+    --text-secondary: #cfcfcf;
+    --text-tertiary: #9a9a9a;
+
+    --progress-bg: rgba(255, 0, 0);
+    --progress-start: rgba(94, 255, 155);
+    --progress-end: rgba(0, 176, 255);
+
+    --card-bg: rgba(30, 30, 30);
+    --card-shadow: 0 8px 32px rgba(0, 0, 0);
+
+    --fade-wait: 10s;
+    --fade-duration: 2s;
+    --fade-ease: ease-out;
+
+    --card-display: flex;
+}
