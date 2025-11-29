@@ -31,6 +31,7 @@ def create_default_css():
     default_css = """:root {
     --bg-color: #00ff00;
     --bg-image: none;
+
     --text-primary: #eee;
     --text-secondary: #cfcfcf;
     --text-tertiary: #9a9a9a;
@@ -393,6 +394,7 @@ async function checkCSSUpdates() {
             }
         }
     } catch (error) {
+        console.error('Error updating CSS:', error);
     }
 }
 setInterval(checkCSSUpdates, 2000);
@@ -486,11 +488,12 @@ def background_image():
     from flask import send_file
     import os
     file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "background_image.jpg")
-    print(f"Looking for background image at: {file_path}")
-    print(f"File exists: {os.path.exists(file_path)}")
     if os.path.exists(file_path):
-        return send_file(file_path, mimetype='image/jpeg')
-    print("Background image not found!")
+        response = send_file(file_path, mimetype='image/jpeg')
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        return response
     return "Image not found", 404
 
 class StoppableServer:
@@ -890,7 +893,8 @@ class SpotifyGUI:
     def toggle_bg_image(self):
         if self.bg_image_var.get():
             self.bg_image_button.config(state=tk.NORMAL)
-            self.update_css_color("--bg-image", "url('/background_image.jpg')")
+            timestamp = int(time.time())
+            self.update_css_color("--bg-image", f"url('/background_image.jpg?t={timestamp}')")
             self.update_bg_preview()
         else:
             self.bg_image_button.config(state=tk.DISABLED)
@@ -906,7 +910,8 @@ class SpotifyGUI:
             dest_path = os.path.join(script_dir, "background_image.jpg")
             try:
                 shutil.copy2(filename, dest_path)
-                self.update_css_color("--bg-image", "url('/background_image.jpg')")
+                timestamp = int(time.time())
+                self.update_css_color("--bg-image", f"url('/background_image.jpg?t={timestamp}')")
                 self.update_bg_preview()
             except Exception as e:
                 print(f"Error copying file: {e}")
