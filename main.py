@@ -811,122 +811,122 @@ class SpotifyGUI:
             self.root.after(0, lambda: messagebox.showerror("Error", f"Authentication failed: {str(e)}"))
 
     def show_help(self):
-        help_window = tk.Toplevel(self.root)
-        help_window.title("Help - Spotify Now Playing")
-        help_window.geometry("600x700")
-        help_window.resizable(True, True)
-        text_frame = ttk.Frame(help_window, padding="10")
-        text_frame.pack(fill=tk.BOTH, expand=True)
-        scrollbar = ttk.Scrollbar(text_frame)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        help_text = tk.Text(text_frame, wrap=tk.WORD, yscrollcommand=scrollbar.set, font=("Arial", 10), padx=10, pady=10)
-        help_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.config(command=help_text.yview)
-        content = """SPOTIFY NOW PLAYING OVERLAY
-    Created by NeonLightning
-    GitHub: https://github.com/neonlightning/neonspotobs/
+            help_window = tk.Toplevel(self.root)
+            help_window.title("Help - Spotify Now Playing")
+            help_window.geometry("600x750")
+            help_window.resizable(True, True)
+            text_frame = ttk.Frame(help_window, padding="10")
+            text_frame.pack(fill=tk.BOTH, expand=True)
+            scrollbar = ttk.Scrollbar(text_frame)
+            scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+            help_text = tk.Text(text_frame, wrap=tk.WORD, yscrollcommand=scrollbar.set, font=("Arial", 10), padx=10, pady=10)
+            help_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            scrollbar.config(command=help_text.yview)
+            content = """SPOTIFY NOW PLAYING OVERLAY
+        Created by NeonLightning
+        GitHub: https://github.com/neonlightning/neonspotobs/
 
-    ═══════════════════════════════════════════════════════
+        ═══════════════════════════════════════════════════════
 
-    SETUP INSTRUCTIONS
+        SETUP INSTRUCTIONS
 
-    1. Create a Spotify Developer App:
-    • Go to https://developer.spotify.com/dashboard
-    • Log in with your Spotify account
-    • Click "Create app"
-    • Fill in the app name and description (can be anything)
-    
-    2. Configure the Redirect URI:
-    • In your app settings, click "Edit Settings"
-    • Under "Redirect URIs", add: http://127.0.0.1:5000/callback
-    • Click "Add" then "Save"
-    
-    3. Get Your Credentials:
-    • Copy your "Client ID" from the app dashboard
-    • Click "View client secret" and copy your "Client Secret"
-    • Paste both into this application
-
-    4. Authenticate:
-    • Click the "Authenticate" button
-    • Your browser will open to authorize the app
-    • After authorization, you'll be redirected back
-    
-    5. Start the Server:
-    • Click "Start Server" to begin streaming your now playing data
-    • Click "Open in Browser" to view the overlay
-    • Add the URL (http://127.0.0.1:5000) as a Browser Source in OBS
-
-    ═══════════════════════════════════════════════════════
-
-    SETTINGS EXPLAINED
-
-    AUTHENTICATION
-    - Client ID: Your Spotify app's unique identifier
-    - Client Secret: Your app's private key (keep this secret!)
-
-    FADE SETTINGS
-    - Disappear wait time: How many seconds after music stops before the overlay fades out
-    - Fade duration: How long the fade out animation takes
-
-    COLOR CUSTOMIZATION
-    - Background Color: The page background color
-    - Primary Text: Main text color (song title)
-    - Progress Bar Start: Left side color of the progress bar gradient
-    - Progress Bar End: Right side color of the progress bar gradient
-    - Card Background: The background color of the now playing card
-
-    - Show card background: Toggle the card background on/off
-    - Use background image: Enable/disable a custom background image
-    - Choose Background Image: Select an image file to use as the background
-
-    ═══════════════════════════════════════════════════════
-
-    USAGE TIPS
-
-    - The overlay automatically updates every 2 seconds
-    - When music is paused, the overlay will fade out after the configured wait time
-    - You can customize colors to match your stream theme
-    - The overlay works with any browser source in OBS, Streamlabs, etc.
-    - Minimize to tray to keep the server running in the background
-
-    ═══════════════════════════════════════════════════════
-
-    TROUBLESHOOTING
-
-    - If authentication fails, double-check your Client ID and Secret
-    - Make sure the redirect URI is exactly: http://127.0.0.1:5000/callback
-    - If the overlay doesn't update, ensure Spotify is playing and you're logged in
-    - Port 5000 must be available (not used by another application)
-
-    ═══════════════════════════════════════════════════════
-
-    For more information, issues, or updates:
-    https://github.com/neonlightning/neonspotobs/
-    """
-        help_text.insert("1.0", content)
-        help_text.config(state=tk.DISABLED)
+        1. Create a Spotify Developer App:
+        • Go to https://developer.spotify.com/dashboard
+        • Log in with your Spotify account
+        • Click "Create app"
+        • Fill in the app name and description (can be anything)
         
-        def open_github(event=None):
-            webbrowser.open("https://github.com/neonlightning/neonspotobs/")
+        2. Configure the Redirect URI:
+        • In your app settings, click "Edit Settings"
+        • Under "Redirect URIs", add: http://127.0.0.1:5000/callback
+        • Click "Add" then "Save"
         
-        def open_spotify_dashboard(event=None):
-            webbrowser.open("https://developer.spotify.com/dashboard")
+        3. Get Your Credentials:
+        • Copy your "Client ID" from the app dashboard
+        • Click "View client secret" and copy your "Client Secret"
+        • Paste both into this application
+
+        4. Authenticate:
+        • Click the "Authenticate" button
+        • Your browser will open to authorize the app
+        • After authorization, you'll be redirected back
         
-        def copy_callback_uri(event=None):
-            self.root.clipboard_clear()
-            self.root.clipboard_append("http://127.0.0.1:5000/callback")
-            messagebox.showinfo("Copied", "Callback URI copied to clipboard!\nhttp://127.0.0.1:5000/callback")
-        
-        button_frame = ttk.Frame(help_window, padding="10")
-        button_frame.pack(fill=tk.X)
-        github_button = ttk.Button(button_frame, text="Open GitHub", command=open_github)
-        github_button.pack(side=tk.LEFT, padx=5)
-        spotify_button = ttk.Button(button_frame, text="Spotify Dashboard", command=open_spotify_dashboard)
-        spotify_button.pack(side=tk.LEFT, padx=5)
-        copy_button = ttk.Button(button_frame, text="Copy Callback URI", command=copy_callback_uri)
-        copy_button.pack(side=tk.LEFT, padx=5)
-        close_button = ttk.Button(button_frame, text="Close", command=help_window.destroy)
-        close_button.pack(side=tk.RIGHT, padx=5)
+        5. Start the Server:
+        • Click "Start Server" to begin streaming your now playing data
+
+        ═══════════════════════════════════════════════════════
+
+        INTEGRATION METHODS (OBS / STREAMLABS)
+
+        METHOD A: Browser Source (Recommended)
+        1. In OBS, add a "Browser" source.
+        2. Set URL to: http://127.0.0.1:5000
+        3. Set Width to 600 (or preferred) and Height to 200.
+        4. Enable "Shutdown source when not visible" if desired.
+
+        METHOD B: Image Source (PNG Export)
+        1. Enable "Enable PNG Export" in this app's settings.
+        2. This creates a file named 'spotify_overlay.png' in the app folder.
+        3. In OBS, add an "Image" source.
+        4. Select the 'spotify_overlay.png' file.
+        5. This file updates automatically as the song changes.
+
+        ═══════════════════════════════════════════════════════
+
+        SETTINGS EXPLAINED
+
+        FADE SETTINGS
+        - Disappear wait time: Seconds to wait after music pauses before hiding.
+        - Fade duration: How long the fade-out animation takes.
+
+        PNG EXPORT SETTINGS
+        - Enable PNG Export: Generates a transparent .png file of the overlay.
+        - PNG Width: The resolution width of the generated image.
+
+        COLOR & BACKGROUND
+        - Customize all text and bar colors.
+        - Use Background Image: Load a local .jpg/.png behind the track info.
+        - Tile background image: Repeats the image instead of stretching it.
+        - Show card background: Toggles the background box.
+
+        ═══════════════════════════════════════════════════════
+
+        TROUBLESHOOTING
+
+        - "Authentication Failed": Double-check Client ID/Secret and Redirect URI.
+        - Overlay not updating: Ensure Spotify is actually playing music.
+        - Port Error: Ensure port 5000 is not used by another app.
+        - Background image not changing: Try restarting the server button.
+
+        ═══════════════════════════════════════════════════════
+
+        For more information, issues, or updates:
+        https://github.com/neonlightning/neonspotobs/
+        """
+            help_text.insert("1.0", content)
+            help_text.config(state=tk.DISABLED)
+            
+            def open_github(event=None):
+                webbrowser.open("https://github.com/neonlightning/neonspotobs/")
+            
+            def open_spotify_dashboard(event=None):
+                webbrowser.open("https://developer.spotify.com/dashboard")
+            
+            def copy_callback_uri(event=None):
+                self.root.clipboard_clear()
+                self.root.clipboard_append("http://127.0.0.1:5000/callback")
+                messagebox.showinfo("Copied", "Callback URI copied to clipboard!\nhttp://127.0.0.1:5000/callback")
+            
+            button_frame = ttk.Frame(help_window, padding="10")
+            button_frame.pack(fill=tk.X)
+            github_button = ttk.Button(button_frame, text="Open GitHub", command=open_github)
+            github_button.pack(side=tk.LEFT, padx=5)
+            spotify_button = ttk.Button(button_frame, text="Spotify Dashboard", command=open_spotify_dashboard)
+            spotify_button.pack(side=tk.LEFT, padx=5)
+            copy_button = ttk.Button(button_frame, text="Copy Callback URI", command=copy_callback_uri)
+            copy_button.pack(side=tk.LEFT, padx=5)
+            close_button = ttk.Button(button_frame, text="Close", command=help_window.destroy)
+            close_button.pack(side=tk.RIGHT, padx=5)
 
     def update_all_previews(self):
         self.update_color_previews()
