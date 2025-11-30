@@ -49,11 +49,13 @@ def create_default_css():
 
     --card-display: flex;
 
-    /* PNG Export Settings */
-    --png-export-enabled: 1;
+    --png-export-enabled: 0;
     --png-width: 600;
 }
 """
+    if not os.path.exists(CSS_FILE):
+        with open(CSS_FILE, "w") as f:
+            f.write(default_css)
 
 def load_css():
     if not os.path.exists(CSS_FILE):
@@ -188,7 +190,13 @@ def create_transparent_image(width, height):
     except Exception as e:
         print(f"Error creating transparent image: {e}")
 
+def setup_playwright_for_bundle():
+    if getattr(sys, 'frozen', False):
+        bundle_dir = sys._MEIPASS
+        os.environ['PLAYWRIGHT_BROWSERS_PATH'] = os.path.join(bundle_dir, 'playwright', 'browsers')
+
 def export_png_loop(width, height, stop_event: threading.Event = None):
+    setup_playwright_for_bundle()
     try:
         from playwright.sync_api import sync_playwright
         with sync_playwright() as pw:
@@ -636,8 +644,10 @@ class SpotifyGUI:
         self.auth_button.pack()
         help_button = ttk.Button(button_container, text="Help", command=self.show_help)
         help_button.pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
-        fade_frame = ttk.LabelFrame(main_frame, text="Fade Settings", padding="10")
-        fade_frame.pack(fill=tk.X, pady=(0, 15))
+        settings_container = ttk.Frame(main_frame)
+        settings_container.pack(fill=tk.X, pady=(0, 15))
+        fade_frame = ttk.LabelFrame(settings_container, text="Fade Settings", padding="10")
+        fade_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
         ttk.Label(fade_frame, text="Disappear wait time (seconds):").grid(row=0, column=0, sticky=tk.W)
         self.fade_wait_var = tk.DoubleVar(value=float(FADE_AFTER_SECONDS))
         self.fade_wait_entry = ttk.Entry(fade_frame, textvariable=self.fade_wait_var, width=10)
@@ -650,8 +660,8 @@ class SpotifyGUI:
         self.fade_duration_entry.grid(row=1, column=1, padx=5, pady=5)
         self.fade_duration_entry.bind('<FocusOut>', lambda e: self.on_fade_change())
         self.fade_duration_entry.bind('<Return>', lambda e: self.on_fade_change())
-        png_frame = ttk.LabelFrame(main_frame, text="PNG Export Settings", padding="10")
-        png_frame.pack(fill=tk.X, pady=(0, 15))
+        png_frame = ttk.LabelFrame(settings_container, text="PNG Export Settings", padding="10")
+        png_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(5, 0))
         png_toggle = ttk.Checkbutton(png_frame, text="Enable PNG Export", variable=self.png_export_var, command=self.toggle_png_export)
         png_toggle.grid(row=0, column=0, sticky=tk.W, pady=5)
         ttk.Label(png_frame, text="PNG Width:").grid(row=1, column=0, sticky=tk.W, pady=5)
@@ -1231,6 +1241,12 @@ class SpotifyGUI:
                     png_width = int(value)
                 except:
                     pass
+        self.png_export_var.set(png_enabled)
+        self.png_width_var.set(png_width)
+        if png_enabled:
+            self.png_width_entry.config(state=tk.NORMAL)
+        else:
+            self.png_width_entry.config(state=tk.DISABLED)
 
     def choose_bg_image(self):
         filename = filedialog.askopenfilename(

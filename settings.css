@@ -1,22 +1,24 @@
 :root {
-    --bg-color: rgba(0, 0, 0, 0.0);
+    --bg-color: rgba(0, 255, 0, 1);
     --bg-image: none;
-    --bg-size: auto;
-    --bg-repeat: repeat;
+    --bg-size: cover;
+    --bg-repeat: no-repeat;
 
-    --text: rgba(238, 238, 0, 0.5813953488372093);
+    --text: rgba(238, 238, 238, 1);
 
     --progress-bg: rgba(255, 0, 0, 0.3);
-    --progress-start: #5e009b;
-    --progress-end: #ff0000;
+    --progress-start: rgba(94, 255, 155, 1);
+    --progress-end: rgba(0, 176, 255, 1);
 
-    --card-bg: rgba(94, 30, 100, 0.7674418604651163);
+    --card-bg: rgba(30, 30, 30, 0.8);
     --card-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
 
-    --fade-wait: 5.0s;
-    --fade-duration: 5.0s;
+    --fade-wait: 10s;
+    --fade-duration: 2s;
     --fade-ease: ease-out;
-    --png-export-enabled: 1;
-    --png-width: 600;
+
     --card-display: flex;
+
+    --png-export-enabled: 0;
+    --png-width: 600;
 }
