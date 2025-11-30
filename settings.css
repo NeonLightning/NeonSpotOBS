@@ -1,20 +1,22 @@
 :root {
-    --bg-color: #00ff00;
-    --bg-image: url('/background_image.jpg?t=1764460364');
-    --text-primary: #eee;
-    --text-secondary: #cfcfcf;
-    --text-tertiary: #9a9a9a;
+    --bg-color: rgba(0, 0, 0, 0.0);
+    --bg-image: none;
+    --bg-size: auto;
+    --bg-repeat: repeat;
 
-    --progress-bg: rgba(255, 0, 0);
-    --progress-start: rgba(94, 255, 155);
-    --progress-end: rgba(0, 176, 255);
+    --text: rgba(238, 238, 0, 0.5813953488372093);
 
-    --card-bg: rgba(30, 30, 30);
-    --card-shadow: 0 8px 32px rgba(0, 0, 0);
+    --progress-bg: rgba(255, 0, 0, 0.3);
+    --progress-start: #5e009b;
+    --progress-end: #ff0000;
 
-    --fade-wait: 10.0s;
-    --fade-duration: 2.0s;
+    --card-bg: rgba(94, 30, 100, 0.7674418604651163);
+    --card-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+
+    --fade-wait: 5.0s;
+    --fade-duration: 5.0s;
     --fade-ease: ease-out;
-
+    --png-export-enabled: 1;
+    --png-width: 600;
     --card-display: flex;
 }

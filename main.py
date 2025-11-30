@@ -29,30 +29,31 @@ gui = None
 
 def create_default_css():
     default_css = """:root {
-    --bg-color: #00ff00;
+    --bg-color: rgba(0, 255, 0, 1);
     --bg-image: none;
+    --bg-size: cover;
+    --bg-repeat: no-repeat;
 
-    --text-primary: #eee;
-    --text-secondary: #cfcfcf;
-    --text-tertiary: #9a9a9a;
+    --text: rgba(238, 238, 238, 1);
 
-    --progress-bg: rgba(255, 0, 0);
-    --progress-start: rgba(94, 255, 155);
-    --progress-end: rgba(0, 176, 255);
+    --progress-bg: rgba(255, 0, 0, 0.3);
+    --progress-start: rgba(94, 255, 155, 1);
+    --progress-end: rgba(0, 176, 255, 1);
 
-    --card-bg: rgba(30, 30, 30);
-    --card-shadow: 0 8px 32px rgba(0, 0, 0);
+    --card-bg: rgba(30, 30, 30, 0.8);
+    --card-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
 
     --fade-wait: 10s;
     --fade-duration: 2s;
     --fade-ease: ease-out;
 
     --card-display: flex;
+
+    /* PNG Export Settings */
+    --png-export-enabled: 1;
+    --png-width: 600;
 }
 """
-    if not os.path.exists(CSS_FILE):
-        with open(CSS_FILE, "w") as f:
-            f.write(default_css)
 
 def load_css():
     if not os.path.exists(CSS_FILE):
@@ -179,6 +180,84 @@ def playback_poll_loop(tokens_container: dict, stop_event: threading.Event):
                 pass
         time.sleep(0.1)
 
+def create_transparent_image(width, height):
+    try:
+        from PIL import Image
+        transparent_img = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+        transparent_img.save("spotify_overlay.png", "PNG")
+    except Exception as e:
+        print(f"Error creating transparent image: {e}")
+
+def export_png_loop(width, height, stop_event: threading.Event = None):
+    try:
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True)
+            page = browser.new_page()
+            page.set_viewport_size({"width": width, "height": height})
+            page.goto("http://127.0.0.1:5000/")
+            last_enabled = True
+            last_width = width
+            if not is_png_export_enabled():
+                create_transparent_image(width, height)
+            while not stop_event.is_set():
+                try:
+                    current_enabled = is_png_export_enabled()
+                    current_width = get_png_width()
+                    if current_width != last_width:
+                        last_width = current_width
+                        width = current_width
+                        page.set_viewport_size({"width": width, "height": height})
+                        if not current_enabled:
+                            create_transparent_image(width, height)
+                    if not current_enabled:
+                        if last_enabled:
+                            create_transparent_image(width, height)
+                            last_enabled = False
+                        time.sleep(1)
+                        continue
+                    if not last_enabled:
+                        last_enabled = True
+                    page.screenshot(
+                        path="spotify_overlay.png",
+                        omit_background=True
+                    )
+                except Exception as e:
+                    print(f"PNG export error: {e}")
+                    time.sleep(1)
+            create_transparent_image(width, height)
+            browser.close()
+    except ImportError:
+        print("Playwright not installed. PNG export disabled.")
+        create_transparent_image(width, height)
+    except Exception as e:
+        print(f"PNG export failed: {e}")
+        create_transparent_image(width, height)
+
+def is_png_export_enabled():
+    try:
+        css_content = load_css()
+        lines = css_content.split('\n')
+        for line in lines:
+            if '--png-export-enabled' in line and ':' in line:
+                value = line.split(':')[1].split(';')[0].strip()
+                return bool(int(value))
+        return True
+    except:
+        return True
+
+def get_png_width():
+    try:
+        css_content = load_css()
+        lines = css_content.split('\n')
+        for line in lines:
+            if '--png-width' in line and ':' in line:
+                value = line.split(':')[1].split(';')[0].strip()
+                return int(value)
+        return 600
+    except:
+        return 600
+
 def format_track_display(data):
     if not data or not data.get('item'):
         return ''
@@ -225,7 +304,7 @@ INDEX_HTML = """
             font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
             padding: 0;
             background: var(--bg-color);
-            color: var(--text-primary);
+            color: var(--text);
             margin: 0;
             min-height: 100vh;
         }
@@ -241,10 +320,10 @@ INDEX_HTML = """
             transition: opacity var(--fade-duration) var(--fade-ease, ease-out);
         }
         .card.has-bg-image {
-            background-image: url('/background_image.jpg');
-            background-size: cover;
+            background-image: var(--bg-image);
+            background-size: var(--bg-size, cover);
             background-position: center;
-            background-repeat: no-repeat;
+            background-repeat: var(--bg-repeat, no-repeat);
         }
         .card.fade-out {
             opacity: 0;
@@ -267,14 +346,14 @@ INDEX_HTML = """
             font-size: 1.05rem;
             font-weight: 600;
             margin-bottom: 6px;
-            color: var(--text-primary);
+            color: var(--text);
         }
         .artist {
-            color: var(--text-secondary);
+            color: var(--text);
             margin-bottom: 6px;
         }
         .album {
-            color: var(--text-tertiary);
+            color: var(--text);
             font-size: 0.9rem;
         }
         .progress {
@@ -293,7 +372,7 @@ INDEX_HTML = """
         .none {
             text-align: center;
             padding: 36px 12px;
-            color: var(--text-tertiary);
+            color: var(--text);
         }
         .progress-container {
             margin-top: 12px;
@@ -308,7 +387,7 @@ INDEX_HTML = """
         }
         .time-display {
             font-size: 0.85rem;
-            color: var(--text-tertiary);
+            color: var(--text);
             text-align: right;
         }
     </style>
@@ -525,94 +604,110 @@ class SpotifyGUI:
         self.tray_icon = None
         self.server_running = False
         self.flask_server = None
+        self.png_export_var = tk.BooleanVar(value=True)
+        self.png_width_var = tk.IntVar(value=600)
         self.setup_ui()
         self.load_settings()
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+        self.root.after(1000, self.update_all_previews)
 
     def setup_ui(self):
-            main_frame = ttk.Frame(self.root, padding="20")
-            main_frame.pack(fill=tk.BOTH, expand=True)
-            title_label = ttk.Label(main_frame, text="Spotify Now Playing", font=("Arial", 16, "bold"))
-            title_label.pack(pady=(0, 20))
-            self.status_frame = ttk.LabelFrame(main_frame, text="Status", padding="10")
-            self.status_frame.pack(fill=tk.X, pady=(0, 15))
-            self.status_label = ttk.Label(self.status_frame, text="Not running", foreground="red")
-            self.status_label.pack()
-            auth_frame = ttk.LabelFrame(main_frame, text="Authentication", padding="10")
-            auth_frame.pack(fill=tk.X, pady=(0, 15))
-            auth_frame.columnconfigure(0, weight=0)
-            auth_frame.columnconfigure(1, weight=1)
-            ttk.Label(auth_frame, text="Client ID:").grid(row=0, column=0, sticky=tk.W, pady=5)
-            self.client_id_entry = ttk.Entry(auth_frame)
-            self.client_id_entry.grid(row=0, column=1, sticky=tk.EW, pady=5, padx=(5, 0))
-            ttk.Label(auth_frame, text="Client Secret:").grid(row=1, column=0, sticky=tk.W, pady=5)
-            self.client_secret_entry = ttk.Entry(auth_frame, show="*")
-            self.client_secret_entry.grid(row=1, column=1, sticky=tk.EW, pady=5, padx=(5, 0))
-            button_container = ttk.Frame(auth_frame)
-            button_container.grid(row=2, column=0, columnspan=2, pady=(10, 0))
-            self.auth_button = ttk.Button(button_container, text="Authenticate", command=self.authenticate)
-            self.auth_button.pack()
-            help_button = ttk.Button(button_container, text="Help", command=self.show_help)
-            help_button.pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
-            fade_frame = ttk.LabelFrame(main_frame, text="Fade Settings", padding="10")
-            fade_frame.pack(fill=tk.X, pady=(0, 15))
-            ttk.Label(fade_frame, text="Disappear wait time (seconds):").grid(row=0, column=0, sticky=tk.W)
-            self.fade_wait_var = tk.DoubleVar(value=float(FADE_AFTER_SECONDS))
-            self.fade_wait_entry = ttk.Entry(fade_frame, textvariable=self.fade_wait_var, width=10)
-            self.fade_wait_entry.grid(row=0, column=1, padx=5, pady=5)
-            self.fade_wait_entry.bind('<FocusOut>', lambda e: self.on_fade_change())
-            self.fade_wait_entry.bind('<Return>', lambda e: self.on_fade_change())
-            ttk.Label(fade_frame, text="Fade duration (seconds):").grid(row=1, column=0, sticky=tk.W)
-            self.fade_duration_var = tk.DoubleVar(value=2.0)
-            self.fade_duration_entry = ttk.Entry(fade_frame, textvariable=self.fade_duration_var, width=10)
-            self.fade_duration_entry.grid(row=1, column=1, padx=5, pady=5)
-            self.fade_duration_entry.bind('<FocusOut>', lambda e: self.on_fade_change())
-            self.fade_duration_entry.bind('<Return>', lambda e: self.on_fade_change())
-            color_frame = ttk.LabelFrame(main_frame, text="Color Customization", padding="10")
-            color_frame.pack(fill=tk.X, pady=(0, 15))
-            color_frame.columnconfigure(0, weight=1)
-            color_frame.columnconfigure(1, weight=0)
-            self.color_buttons = []
-            self.color_previews = {}
-            colors = [
-                ("Background Color", "--bg-color"),
-                ("Primary Text", "--text-primary"),
-                ("Progress Bar Start", "--progress-start"),
-                ("Progress Bar End", "--progress-end"),
-                ("Card Background", "--card-bg"),
-            ]
-            for i, (label, var_name) in enumerate(colors):
-                btn = ttk.Button(color_frame, text=label, command=lambda v=var_name: self.choose_color(v))
-                btn.grid(row=i, column=0, pady=5, sticky=tk.W+tk.E, padx=(0, 10))
-                preview = tk.Canvas(color_frame, width=60, height=25, highlightthickness=1, highlightbackground="gray")
-                preview.grid(row=i, column=1, pady=5)
-                self.color_previews[var_name] = preview
-                self.color_buttons.append(btn)
-            self.card_var = tk.BooleanVar(value=True)
-            self.bg_image_var = tk.BooleanVar(value=False)
-            bg_image_check = ttk.Checkbutton(color_frame, text="Use background image", variable=self.bg_image_var, command=self.toggle_bg_image)
-            bg_image_check.grid(row=len(colors)+1, column=0, columnspan=2, pady=5, sticky=tk.W)
-            bg_image_frame = ttk.Frame(color_frame)
-            bg_image_frame.grid(row=len(colors)+2, column=0, columnspan=2, pady=5, sticky=tk.W+tk.E)
-            self.bg_image_button = ttk.Button(bg_image_frame, text="Choose Background Image", command=self.choose_bg_image, state=tk.DISABLED)
-            self.bg_image_button.pack(side=tk.LEFT, padx=(0, 10))
-            self.bg_preview_canvas = tk.Canvas(bg_image_frame, width=400, height=150, bg='white', highlightthickness=1, highlightbackground="gray")
-            self.bg_preview_canvas.pack(side=tk.RIGHT)
-            button_frame = ttk.Frame(main_frame)
-            button_frame.pack(fill=tk.X, pady=(10, 0))
-            self.start_button = ttk.Button(button_frame, text="Start Server", command=self.start_server, state=tk.DISABLED)
-            self.stop_button = ttk.Button(button_frame, text="Stop Server", command=self.stop_server, state=tk.DISABLED)
-            self.open_button = ttk.Button(button_frame, text="Open in Browser", command=self.open_browser, state=tk.DISABLED)
-            self.minimize_button = ttk.Button(button_frame, text="Minimize to Tray", command=self.minimize_to_tray)
-            quit_button = ttk.Button(button_frame, text="Quit", command=self.quit_app)
-            self.start_button.pack(side=tk.LEFT, padx=(0, 5), expand=True, fill=tk.X)
-            self.stop_button.pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
-            self.open_button.pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
-            self.minimize_button.pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
-            quit_button.pack(side=tk.LEFT, padx=(5, 0), expand=True, fill=tk.X)
-            self.load_existing_credentials()
-            self.root.after(100, lambda: self.root.geometry(f"500x{self.root.winfo_reqheight()}"))
-            self.root.after(100, self.load_settings_on_startup)
+        main_frame = ttk.Frame(self.root, padding="20")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        title_label = ttk.Label(main_frame, text="Spotify Now Playing", font=("Arial", 16, "bold"))
+        title_label.pack(pady=(0, 20))
+        self.status_frame = ttk.LabelFrame(main_frame, text="Status", padding="10")
+        self.status_frame.pack(fill=tk.X, pady=(0, 15))
+        self.status_label = ttk.Label(self.status_frame, text="Not running", foreground="red")
+        self.status_label.pack()
+        auth_frame = ttk.LabelFrame(main_frame, text="Authentication", padding="10")
+        auth_frame.pack(fill=tk.X, pady=(0, 15))
+        auth_frame.columnconfigure(0, weight=0)
+        auth_frame.columnconfigure(1, weight=1)
+        ttk.Label(auth_frame, text="Client ID:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        self.client_id_entry = ttk.Entry(auth_frame)
+        self.client_id_entry.grid(row=0, column=1, sticky=tk.EW, pady=5, padx=(5, 0))
+        ttk.Label(auth_frame, text="Client Secret:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        self.client_secret_entry = ttk.Entry(auth_frame, show="*")
+        self.client_secret_entry.grid(row=1, column=1, sticky=tk.EW, pady=5, padx=(5, 0))
+        button_container = ttk.Frame(auth_frame)
+        button_container.grid(row=2, column=0, columnspan=2, pady=(10, 0))
+        self.auth_button = ttk.Button(button_container, text="Authenticate", command=self.authenticate)
+        self.auth_button.pack()
+        help_button = ttk.Button(button_container, text="Help", command=self.show_help)
+        help_button.pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
+        fade_frame = ttk.LabelFrame(main_frame, text="Fade Settings", padding="10")
+        fade_frame.pack(fill=tk.X, pady=(0, 15))
+        ttk.Label(fade_frame, text="Disappear wait time (seconds):").grid(row=0, column=0, sticky=tk.W)
+        self.fade_wait_var = tk.DoubleVar(value=float(FADE_AFTER_SECONDS))
+        self.fade_wait_entry = ttk.Entry(fade_frame, textvariable=self.fade_wait_var, width=10)
+        self.fade_wait_entry.grid(row=0, column=1, padx=5, pady=5)
+        self.fade_wait_entry.bind('<FocusOut>', lambda e: self.on_fade_change())
+        self.fade_wait_entry.bind('<Return>', lambda e: self.on_fade_change())
+        ttk.Label(fade_frame, text="Fade duration (seconds):").grid(row=1, column=0, sticky=tk.W)
+        self.fade_duration_var = tk.DoubleVar(value=2.0)
+        self.fade_duration_entry = ttk.Entry(fade_frame, textvariable=self.fade_duration_var, width=10)
+        self.fade_duration_entry.grid(row=1, column=1, padx=5, pady=5)
+        self.fade_duration_entry.bind('<FocusOut>', lambda e: self.on_fade_change())
+        self.fade_duration_entry.bind('<Return>', lambda e: self.on_fade_change())
+        png_frame = ttk.LabelFrame(main_frame, text="PNG Export Settings", padding="10")
+        png_frame.pack(fill=tk.X, pady=(0, 15))
+        png_toggle = ttk.Checkbutton(png_frame, text="Enable PNG Export", variable=self.png_export_var, command=self.toggle_png_export)
+        png_toggle.grid(row=0, column=0, sticky=tk.W, pady=5)
+        ttk.Label(png_frame, text="PNG Width:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        self.png_width_entry = ttk.Entry(png_frame, textvariable=self.png_width_var, width=10)
+        self.png_width_entry.grid(row=1, column=1, padx=5, pady=5, sticky=tk.W)
+        self.png_width_entry.bind('<FocusOut>', lambda e: self.on_png_settings_change())
+        self.png_width_entry.bind('<Return>', lambda e: self.on_png_settings_change())
+        ttk.Label(png_frame, text="Exports spotify_overlay.png for use in OBS etc.", font=("Arial", 8), foreground="gray").grid(row=2, column=0, columnspan=2, sticky=tk.W, pady=(5,0))
+        color_frame = ttk.LabelFrame(main_frame, text="Color Customization", padding="10")
+        color_frame.pack(fill=tk.X, pady=(0, 15))
+        color_frame.columnconfigure(0, weight=1)
+        color_frame.columnconfigure(1, weight=0)
+        self.color_buttons = []
+        self.color_previews = {}
+        colors = [
+            ("Background Color", "--bg-color"),
+            ("Primary Text", "--text"),
+            ("Progress Bar Start", "--progress-start"),
+            ("Progress Bar End", "--progress-end"),
+            ("Card Background", "--card-bg"),
+        ]
+        for i, (label, var_name) in enumerate(colors):
+            btn = ttk.Button(color_frame, text=label, command=lambda v=var_name: self.choose_color(v))
+            btn.grid(row=i, column=0, pady=5, sticky=tk.W+tk.E, padx=(0, 10))
+            preview = tk.Canvas(color_frame, width=60, height=25, highlightthickness=1, highlightbackground="gray")
+            preview.grid(row=i, column=1, pady=5)
+            self.color_previews[var_name] = preview
+            self.color_buttons.append(btn)
+        self.card_var = tk.BooleanVar(value=True)
+        self.bg_image_var = tk.BooleanVar(value=False)
+        bg_image_check = ttk.Checkbutton(color_frame, text="Use background image", variable=self.bg_image_var, command=self.toggle_bg_image)
+        bg_image_check.grid(row=len(colors)+1, column=0, columnspan=2, pady=5, sticky=tk.W)
+        self.bg_tile_var = tk.BooleanVar(value=False)
+        bg_tile_check = ttk.Checkbutton(color_frame, text="Tile background image", variable=self.bg_tile_var, command=self.toggle_bg_tile)
+        bg_tile_check.grid(row=len(colors)+3, column=0, columnspan=2, pady=5, sticky=tk.W)
+        bg_image_frame = ttk.Frame(color_frame)
+        bg_image_frame.grid(row=len(colors)+2, column=0, columnspan=2, pady=5, sticky=tk.W+tk.E)
+        self.bg_image_button = ttk.Button(bg_image_frame, text="Choose Background Image", command=self.choose_bg_image, state=tk.DISABLED)
+        self.bg_image_button.pack(side=tk.LEFT, padx=(0, 10))
+        self.bg_preview_canvas = tk.Canvas(bg_image_frame, width=400, height=150, bg='white', highlightthickness=1, highlightbackground="gray")
+        self.bg_preview_canvas.pack(side=tk.RIGHT)
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill=tk.X, pady=(10, 0))
+        self.start_button = ttk.Button(button_frame, text="Start Server", command=self.start_server, state=tk.DISABLED)
+        self.stop_button = ttk.Button(button_frame, text="Stop Server", command=self.stop_server, state=tk.DISABLED)
+        self.open_button = ttk.Button(button_frame, text="Open in Browser", command=self.open_browser, state=tk.DISABLED)
+        self.minimize_button = ttk.Button(button_frame, text="Minimize to Tray", command=self.minimize_to_tray)
+        quit_button = ttk.Button(button_frame, text="Quit", command=self.quit_app)
+        self.start_button.pack(side=tk.LEFT, padx=(0, 5), expand=True, fill=tk.X)
+        self.stop_button.pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
+        self.open_button.pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
+        self.minimize_button.pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
+        quit_button.pack(side=tk.LEFT, padx=(5, 0), expand=True, fill=tk.X)
+        self.load_existing_credentials()
+        self.root.after(100, lambda: self.root.geometry(f"500x{self.root.winfo_reqheight()}"))
+        self.root.after(100, self.load_settings_on_startup)
 
     def start_server(self):
         if not self.tokens.get("refresh_token"):
@@ -630,14 +725,15 @@ class SpotifyGUI:
         poll_thread.start()
         self.flask_server = StoppableServer(app, "127.0.0.1", 5000)
         self.flask_server.start()
+        png_thread = threading.Thread(target=export_png_loop, args=(self.png_width_var.get(), 188, self.stop_event), daemon=True)
+        png_thread.start()
         self.server_running = True
         self.update_button_states()
         self.status_label.config(text="Server running at http://127.0.0.1:5000", foreground="green")
 
     def load_settings_on_startup(self):
         self.load_settings()
-        self.update_color_previews()
-        self.root.after(500, self.update_bg_preview)
+        self.update_all_previews()
         self.root.geometry(f"500x{self.root.winfo_reqheight()}")
 
     def load_existing_credentials(self):
@@ -705,23 +801,18 @@ class SpotifyGUI:
             self.root.after(0, lambda: messagebox.showerror("Error", f"Authentication failed: {str(e)}"))
 
     def show_help(self):
-            help_window = tk.Toplevel(self.root)
-            help_window.title("Help - Spotify Now Playing")
-            help_window.geometry("600x700")
-            help_window.resizable(True, True)
-            
-            text_frame = ttk.Frame(help_window, padding="10")
-            text_frame.pack(fill=tk.BOTH, expand=True)
-            
-            scrollbar = ttk.Scrollbar(text_frame)
-            scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-            
-            help_text = tk.Text(text_frame, wrap=tk.WORD, yscrollcommand=scrollbar.set, 
-                            font=("Arial", 10), padx=10, pady=10)
-            help_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-            scrollbar.config(command=help_text.yview)
-            
-            content = """SPOTIFY NOW PLAYING OVERLAY
+        help_window = tk.Toplevel(self.root)
+        help_window.title("Help - Spotify Now Playing")
+        help_window.geometry("600x700")
+        help_window.resizable(True, True)
+        text_frame = ttk.Frame(help_window, padding="10")
+        text_frame.pack(fill=tk.BOTH, expand=True)
+        scrollbar = ttk.Scrollbar(text_frame)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        help_text = tk.Text(text_frame, wrap=tk.WORD, yscrollcommand=scrollbar.set, font=("Arial", 10), padx=10, pady=10)
+        help_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.config(command=help_text.yview)
+        content = """SPOTIFY NOW PLAYING OVERLAY
     Created by NeonLightning
     GitHub: https://github.com/neonlightning/neonspotobs/
 
@@ -802,36 +893,34 @@ class SpotifyGUI:
     For more information, issues, or updates:
     https://github.com/neonlightning/neonspotobs/
     """
-            
-            help_text.insert("1.0", content)
-            help_text.config(state=tk.DISABLED)
-            
-            def open_github(event=None):
-                webbrowser.open("https://github.com/neonlightning/neonspotobs/")
-            
-            def open_spotify_dashboard(event=None):
-                webbrowser.open("https://developer.spotify.com/dashboard")
-            
-            def copy_callback_uri(event=None):
-                self.root.clipboard_clear()
-                self.root.clipboard_append("http://127.0.0.1:5000/callback")
-                messagebox.showinfo("Copied", "Callback URI copied to clipboard!\nhttp://127.0.0.1:5000/callback")
-            
-            # Button frame
-            button_frame = ttk.Frame(help_window, padding="10")
-            button_frame.pack(fill=tk.X)
-            
-            github_button = ttk.Button(button_frame, text="Open GitHub", command=open_github)
-            github_button.pack(side=tk.LEFT, padx=5)
-            
-            spotify_button = ttk.Button(button_frame, text="Spotify Dashboard", command=open_spotify_dashboard)
-            spotify_button.pack(side=tk.LEFT, padx=5)
-            
-            copy_button = ttk.Button(button_frame, text="Copy Callback URI", command=copy_callback_uri)
-            copy_button.pack(side=tk.LEFT, padx=5)
-            
-            close_button = ttk.Button(button_frame, text="Close", command=help_window.destroy)
-            close_button.pack(side=tk.RIGHT, padx=5)
+        help_text.insert("1.0", content)
+        help_text.config(state=tk.DISABLED)
+        
+        def open_github(event=None):
+            webbrowser.open("https://github.com/neonlightning/neonspotobs/")
+        
+        def open_spotify_dashboard(event=None):
+            webbrowser.open("https://developer.spotify.com/dashboard")
+        
+        def copy_callback_uri(event=None):
+            self.root.clipboard_clear()
+            self.root.clipboard_append("http://127.0.0.1:5000/callback")
+            messagebox.showinfo("Copied", "Callback URI copied to clipboard!\nhttp://127.0.0.1:5000/callback")
+        
+        button_frame = ttk.Frame(help_window, padding="10")
+        button_frame.pack(fill=tk.X)
+        github_button = ttk.Button(button_frame, text="Open GitHub", command=open_github)
+        github_button.pack(side=tk.LEFT, padx=5)
+        spotify_button = ttk.Button(button_frame, text="Spotify Dashboard", command=open_spotify_dashboard)
+        spotify_button.pack(side=tk.LEFT, padx=5)
+        copy_button = ttk.Button(button_frame, text="Copy Callback URI", command=copy_callback_uri)
+        copy_button.pack(side=tk.LEFT, padx=5)
+        close_button = ttk.Button(button_frame, text="Close", command=help_window.destroy)
+        close_button.pack(side=tk.RIGHT, padx=5)
+
+    def update_all_previews(self):
+        self.update_color_previews()
+        self.update_bg_preview()
 
     def update_color_previews(self):
         if not hasattr(self, 'color_previews'):
@@ -843,9 +932,22 @@ class SpotifyGUI:
             if color:
                 try:
                     canvas.delete("all")
-                    canvas.create_rectangle(0, 0, 60, 25, fill=color, outline="")
-                except:
-                    pass
+                    for i in range(0, 60, 6):
+                        for j in range(0, 25, 6):
+                            if (i // 6 + j // 6) % 2 == 0:
+                                canvas.create_rectangle(i, j, i+6, j+6, fill="#e0e0e0", outline="")
+                            else:
+                                canvas.create_rectangle(i, j, i+6, j+6, fill="#ffffff", outline="")
+                    if color.startswith('rgba'):
+                        rgba_parts = color.replace('rgba(', '').replace(')', '').split(',')
+                        if len(rgba_parts) >= 4:
+                            r, g, b = [int(x.strip()) for x in rgba_parts[:3]]
+                            hex_color = f'#{r:02x}{g:02x}{b:02x}'
+                            canvas.create_rectangle(0, 0, 60, 25, fill=hex_color, outline="")
+                    else:
+                        canvas.create_rectangle(0, 0, 60, 25, fill=color, outline="")
+                except Exception as e:
+                    print(f"Error updating color preview for {var_name}: {e}")
 
     def extract_color_from_css(self, css_lines, var_name):
         for line in css_lines:
@@ -853,38 +955,186 @@ class SpotifyGUI:
                 parts = line.split(':')
                 if len(parts) >= 2:
                     color = parts[1].split(';')[0].strip()
-                    if 'rgba' in color:
-                        try:
-                            rgba_parts = color.replace('rgba(', '').replace(')', '').split(',')
-                            if len(rgba_parts) >= 3:
-                                r, g, b = [int(x.strip()) for x in rgba_parts[:3]]
-                                return f'#{r:02x}{g:02x}{b:02x}'
-                        except:
-                            return None
                     return color
         return None
 
     def choose_color(self, var_name):
         current_color = self.extract_color_from_css(load_css().split('\n'), var_name)
-        color = colorchooser.askcolor(title=f"Choose color for {var_name}", initialcolor=current_color if current_color and current_color.startswith('#') else None)
-        if color[1]:
-            self.update_css_color(var_name, color[1])
+        color_dialog = tk.Toplevel(self.root)
+        color_dialog.title(f"Choose color for {var_name}")
+        color_dialog.geometry("350x500")
+        color_dialog.resizable(False, False)
+        color_dialog.transient(self.root)
+        color_dialog.grab_set()
+        rgb_frame = ttk.LabelFrame(color_dialog, text="RGB Values", padding="10")
+        rgb_frame.pack(fill=tk.X, padx=10, pady=5)
+        ttk.Label(rgb_frame, text="Red:").grid(row=0, column=0, sticky=tk.W)
+        red_var = tk.IntVar(value=255)
+        red_scale = ttk.Scale(rgb_frame, from_=0, to=255, variable=red_var, orient=tk.HORIZONTAL)
+        red_scale.grid(row=0, column=1, sticky=tk.EW, padx=5)
+        red_entry = ttk.Entry(rgb_frame, textvariable=red_var, width=5)
+        red_entry.grid(row=0, column=2, padx=5)
+        ttk.Label(rgb_frame, text="Green:").grid(row=1, column=0, sticky=tk.W)
+        green_var = tk.IntVar(value=255)
+        green_scale = ttk.Scale(rgb_frame, from_=0, to=255, variable=green_var, orient=tk.HORIZONTAL)
+        green_scale.grid(row=1, column=1, sticky=tk.EW, padx=5)
+        green_entry = ttk.Entry(rgb_frame, textvariable=green_var, width=5)
+        green_entry.grid(row=1, column=2, padx=5)
+        ttk.Label(rgb_frame, text="Blue:").grid(row=2, column=0, sticky=tk.W)
+        blue_var = tk.IntVar(value=255)
+        blue_scale = ttk.Scale(rgb_frame, from_=0, to=255, variable=blue_var, orient=tk.HORIZONTAL)
+        blue_scale.grid(row=2, column=1, sticky=tk.EW, padx=5)
+        blue_entry = ttk.Entry(rgb_frame, textvariable=blue_var, width=5)
+        blue_entry.grid(row=2, column=2, padx=5)
+        ttk.Label(rgb_frame, text="Alpha:").grid(row=3, column=0, sticky=tk.W)
+        alpha_var = tk.DoubleVar(value=1.0)
+        alpha_scale = ttk.Scale(rgb_frame, from_=0.0, to=1.0, variable=alpha_var, orient=tk.HORIZONTAL)
+        alpha_scale.grid(row=3, column=1, sticky=tk.EW, padx=5)
+        alpha_entry = ttk.Entry(rgb_frame, textvariable=alpha_var, width=5)
+        alpha_entry.grid(row=3, column=2, padx=5)
+        value_frame = ttk.LabelFrame(color_dialog, text="Color Value", padding="10")
+        value_frame.pack(fill=tk.X, padx=10, pady=5)
+        color_value_var = tk.StringVar(value="")
+        value_label = ttk.Label(value_frame, textvariable=color_value_var, font=("Courier", 10))
+        value_label.pack(pady=5)
+        preview_frame = ttk.LabelFrame(color_dialog, text="Preview", padding="10")
+        preview_frame.pack(fill=tk.X, padx=10, pady=5)
+        preview_canvas = tk.Canvas(preview_frame, width=200, height=50, highlightthickness=1, highlightbackground="gray")
+        preview_canvas.pack(pady=10)
+        current_frame = ttk.LabelFrame(color_dialog, text="Current Color", padding="10")
+        current_frame.pack(fill=tk.X, padx=10, pady=5)
+        current_canvas = tk.Canvas(current_frame, width=200, height=30, highlightthickness=1, highlightbackground="gray")
+        current_canvas.pack(pady=5)
+        if current_color:
             try:
-                canvas = self.color_previews[var_name]
-                canvas.delete("all")
-                canvas.create_rectangle(0, 0, 60, 25, fill=color[1], outline="")
-            except:
-                pass
+                if current_color.startswith('rgba'):
+                    rgba_parts = current_color.replace('rgba(', '').replace(')', '').split(',')
+                    if len(rgba_parts) >= 4:
+                        r, g, b = [int(x.strip()) for x in rgba_parts[:3]]
+                        a = float(rgba_parts[3].strip())
+                        red_var.set(r)
+                        green_var.set(g)
+                        blue_var.set(b)
+                        alpha_var.set(a)
+                elif current_color.startswith('#'):
+                    hex_color = current_color.lstrip('#')
+                    if len(hex_color) == 6:
+                        r = int(hex_color[0:2], 16)
+                        g = int(hex_color[2:4], 16)
+                        b = int(hex_color[4:6], 16)
+                        red_var.set(r)
+                        green_var.set(g)
+                        blue_var.set(b)
+                        alpha_var.set(1.0)
+            except Exception as e:
+                print(f"Error parsing current color: {e}")
+
+        def update_preview(*args):
+            try:
+                r = red_var.get()
+                g = green_var.get()
+                b = blue_var.get()
+                a = alpha_var.get()
+                if a == 1.0:
+                    color_value = f'#{r:02x}{g:02x}{b:02x}'
+                else:
+                    color_value = f'rgba({r}, {g}, {b}, {a})'
+                color_value_var.set(color_value)
+                preview_canvas.delete("all")
+                color_hex = f'#{r:02x}{g:02x}{b:02x}'
+                for i in range(0, 200, 10):
+                    for j in range(0, 50, 10):
+                        if (i // 10 + j // 10) % 2 == 0:
+                            preview_canvas.create_rectangle(i, j, i+10, j+10, fill="#e0e0e0", outline="")
+                        else:
+                            preview_canvas.create_rectangle(i, j, i+10, j+10, fill="#ffffff", outline="")
+                preview_canvas.create_rectangle(0, 0, 200, 50, fill=color_hex, outline="")
+                current_canvas.delete("all")
+                if current_color:
+                    for i in range(0, 200, 10):
+                        for j in range(0, 30, 10):
+                            if (i // 10 + j // 10) % 2 == 0:
+                                current_canvas.create_rectangle(i, j, i+10, j+10, fill="#e0e0e0", outline="")
+                            else:
+                                current_canvas.create_rectangle(i, j, i+10, j+10, fill="#ffffff", outline="")
+                    if current_color.startswith('rgba'):
+                        rgba_parts = current_color.replace('rgba(', '').replace(')', '').split(',')
+                        if len(rgba_parts) >= 4:
+                            r_curr, g_curr, b_curr = [int(x.strip()) for x in rgba_parts[:3]]
+                            hex_curr = f'#{r_curr:02x}{g_curr:02x}{b_curr:02x}'
+                            current_canvas.create_rectangle(0, 0, 200, 30, fill=hex_curr, outline="")
+                    else:
+                        current_canvas.create_rectangle(0, 0, 200, 30, fill=current_color, outline="")
+            except Exception as e:
+                print(f"Error updating preview: {e}")
+        red_var.trace_add('write', update_preview)
+        green_var.trace_add('write', update_preview)
+        blue_var.trace_add('write', update_preview)
+        alpha_var.trace_add('write', update_preview)
+        update_preview()
+        button_frame = ttk.Frame(color_dialog, padding="10")
+        button_frame.pack(fill=tk.X, padx=10, pady=10)
+
+        def apply_color():
+                try:
+                    r = red_var.get()
+                    g = green_var.get()
+                    b = blue_var.get()
+                    a = alpha_var.get()
+                    if a == 1.0:
+                        color_value = f'#{r:02x}{g:02x}{b:02x}'
+                    else:
+                        color_value = f'rgba({r}, {g}, {b}, {a})'
+                    self.update_css_color(var_name, color_value)
+                    try:
+                        canvas = self.color_previews[var_name]
+                        canvas.delete("all")
+                        for i in range(0, 60, 6):
+                            for j in range(0, 25, 6):
+                                if (i // 6 + j // 6) % 2 == 0:
+                                    canvas.create_rectangle(i, j, i+6, j+6, fill="#e0e0e0", outline="")
+                                else:
+                                    canvas.create_rectangle(i, j, i+6, j+6, fill="#ffffff", outline="")
+                        hex_color = f'#{r:02x}{g:02x}{b:02x}'
+                        canvas.create_rectangle(0, 0, 60, 25, fill=hex_color, outline="")
+                    except Exception as e:
+                        print(f"Error updating main preview: {e}")
+                    color_dialog.destroy()
+                    messagebox.showinfo("Success", f"Color for {var_name} updated successfully!")
+                except Exception as e:
+                    messagebox.showerror("Error", f"Failed to apply color: {str(e)}")
+
+        def use_simple_picker():
+            color_dialog.destroy()
+            simple_color = colorchooser.askcolor(
+                title=f"Choose color for {var_name} (No Alpha)", initialcolor=current_color if current_color and current_color.startswith('#') else None)
+            if simple_color[1]:
+                self.update_css_color(var_name, simple_color[1])
+                try:
+                    canvas = self.color_previews[var_name]
+                    canvas.delete("all")
+                    canvas.create_rectangle(0, 0, 60, 25, fill=simple_color[1], outline="")
+                except:
+                    pass
+
+        ttk.Button(button_frame, text="Apply Color", command=apply_color).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Simple Picker", command=use_simple_picker).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Cancel", command=color_dialog.destroy).pack(side=tk.RIGHT, padx=5)
 
     def update_css_color(self, var_name, color_value):
         css_content = load_css()
         lines = css_content.split('\n')
+        updated = False
         for i, line in enumerate(lines):
-            if var_name in line:
+            if var_name in line and ':' in line:
                 lines[i] = f"    {var_name}: {color_value};"
+                updated = True
                 break
+        if not updated:
+            lines.insert(-1, f"    {var_name}: {color_value};")
         new_css = '\n'.join(lines)
         save_css(new_css)
+        self.root.after(100, self.update_all_previews)
 
     def toggle_card(self):
         display_value = "flex" if self.card_var.get() else "none"
@@ -895,10 +1145,92 @@ class SpotifyGUI:
             self.bg_image_button.config(state=tk.NORMAL)
             timestamp = int(time.time())
             self.update_css_color("--bg-image", f"url('/background_image.jpg?t={timestamp}')")
-            self.update_bg_preview()
+            if self.bg_tile_var.get():
+                self.update_css_color("--bg-size", "auto")
+                self.update_css_color("--bg-repeat", "repeat")
+            else:
+                self.update_css_color("--bg-size", "cover")
+                self.update_css_color("--bg-repeat", "no-repeat")
         else:
             self.bg_image_button.config(state=tk.DISABLED)
             self.update_css_color("--bg-image", "none")
+        self.root.after(500, self.update_bg_preview)
+
+    def toggle_bg_tile(self):
+        if self.bg_tile_var.get():
+            self.update_css_color("--bg-size", "auto")
+            self.update_css_color("--bg-repeat", "repeat")
+        else:
+            self.update_css_color("--bg-size", "cover")
+            self.update_css_color("--bg-repeat", "no-repeat")
+
+    def toggle_png_export(self):
+        if self.png_export_var.get():
+            self.png_width_entry.config(state=tk.NORMAL)
+            status = "enabled"
+        else:
+            self.png_width_entry.config(state=tk.DISABLED)
+            status = "disabled"
+        self.save_png_settings_to_css()
+        if self.server_running:
+            self.status_label.config(text=f"PNG export {status}. Changes take effect immediately.", foreground="blue")
+            self.root.after(3000, lambda: self.status_label.config(text="Server running at http://127.0.0.1:5000", foreground="green"))
+
+    def on_png_settings_change(self):
+        try:
+            width = self.png_width_var.get()
+            if width < 100:
+                width = 100
+                self.png_width_var.set(100)
+            elif width > 2000:
+                width = 2000
+                self.png_width_var.set(2000)
+            self.save_png_settings_to_css()
+            if self.server_running:
+                self.status_label.config(text=f"PNG width updated to {width}px. Changes take effect immediately.", foreground="blue")
+                self.root.after(3000, lambda: self.status_label.config(text="Server running at http://127.0.0.1:5000", foreground="green"))
+        except tk.TclError:
+            self.png_width_var.set(600)
+            self.save_png_settings_to_css()
+
+    def save_png_settings_to_css(self):
+        css_content = load_css()
+        lines = css_content.split('\n')
+        updated = False
+        for i, line in enumerate(lines):
+            if '--png-export-enabled' in line and ':' in line:
+                lines[i] = f"    --png-export-enabled: {1 if self.png_export_var.get() else 0};"
+                updated = True
+            elif '--png-width' in line and ':' in line:
+                lines[i] = f"    --png-width: {self.png_width_var.get()};"
+                updated = True
+        if not updated:
+            for i, line in enumerate(lines):
+                if line.strip() == "}":
+                    lines.insert(i, f"    --png-export-enabled: {1 if self.png_export_var.get() else 0};")
+                    lines.insert(i+1, f"    --png-width: {self.png_width_var.get()};")
+                    break
+        new_css = '\n'.join(lines)
+        save_css(new_css)
+
+    def load_png_settings_from_css(self):
+        css_content = load_css()
+        lines = css_content.split('\n')
+        png_enabled = False
+        png_width = 600
+        for line in lines:
+            if '--png-export-enabled' in line and ':' in line:
+                try:
+                    value = line.split(':')[1].split(';')[0].strip()
+                    png_enabled = bool(int(value))
+                except:
+                    pass
+            elif '--png-width' in line and ':' in line:
+                try:
+                    value = line.split(':')[1].split(';')[0].strip()
+                    png_width = int(value)
+                except:
+                    pass
 
     def choose_bg_image(self):
         filename = filedialog.askopenfilename(
@@ -912,7 +1244,13 @@ class SpotifyGUI:
                 shutil.copy2(filename, dest_path)
                 timestamp = int(time.time())
                 self.update_css_color("--bg-image", f"url('/background_image.jpg?t={timestamp}')")
-                self.update_bg_preview()
+                if self.bg_tile_var.get():
+                    self.update_css_color("--bg-size", "auto")
+                    self.update_css_color("--bg-repeat", "repeat")
+                else:
+                    self.update_css_color("--bg-size", "cover")
+                    self.update_css_color("--bg-repeat", "no-repeat")
+                self.root.after(500, self.update_bg_preview)
             except Exception as e:
                 print(f"Error copying file: {e}")
                 messagebox.showerror("Error", f"Failed: {str(e)}")
@@ -993,9 +1331,16 @@ class SpotifyGUI:
                     self.bg_image_var.set(has_image)
                     if hasattr(self, 'bg_image_button'):
                         self.bg_image_button.config(state=tk.NORMAL if has_image else tk.DISABLED)
-                    self.root.after(500, self.update_bg_preview)
                 except:
                     pass
+            elif '--bg-repeat' in line and ':' in line:
+                try:
+                    value = line.split(':')[1].split(';')[0].strip()
+                    self.bg_tile_var.set(value == "repeat")
+                except:
+                    pass
+        self.load_png_settings_from_css()
+        self.root.after(100, self.update_all_previews)
 
     def stop_server(self):
         if not self.server_running:

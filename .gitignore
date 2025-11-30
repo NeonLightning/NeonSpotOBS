@@ -11,6 +11,9 @@ icon.png
 icon.png
 NeonSpotOBS.spec
 NeonSpotOBS.exe
-settings.css
-settings.css
 *.css
+export.png
+composite_settings.json
+main.py.txt
+settings.css
+spotify_overlay.png
